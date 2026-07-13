@@ -23,21 +23,37 @@ If any information cannot be inferred from context, **ask the user explicitly be
 
 ### 2. Generate the summary
 
-Output exactly this block in a code fence so it's easy to copy.
+Output the result as **Markdown inside a ` ```markdown ` fenced code block** so it can be copy-pasted into the GitLab MR description with the metadata and formatting preserved.
 
-**IMPORTANT — line breaks**: each field MUST be on its own line, separated by a real newline (`\n`), so that copy-pasting into GitLab preserves the line breaks. Do NOT output all fields on a single line.
+**IMPORTANT — line breaks**: the metadata fields MUST each be their own `###` header (real newlines), so pasting into GitLab renders each on its own line. Do NOT use bold labels or collapse them onto a single line.
 
+Use exactly this structure:
+
+````markdown
+```markdown
+### Jira
+<TICKET-ID — ticket title, or None>
+
+### App to launch
+<app name(s)>
+
+### Feature Flag
+<flag name or None>
+
+## Description
+
+<2–4 sentences (or a short bullet list) covering: the context/problem being addressed, what the change actually does, and why — enough for a reviewer to understand the MR without reading the diff.>
+
+<If relevant, add a `### Key changes` bullet list of the notable modifications (files/layers touched, new endpoints, migrations, etc.).>
 ```
-Jira: <TICKET-ID> — <ticket title or short description>
-App to launch: <app name(s)>
-Feature Flag: <flag name or None>
-Comment: <one concise English sentence explaining what this MR does and why>
-```
+````
 
 ### 3. Rules
 
 - Always write in **English**.
-- Keep Comment to one sentence — what changed and the intent, no filler.
+- **Description must be substantive**, not a single terse sentence: give the reviewer the context (why this change exists), the what (what it does), and the impact. Still no filler — every sentence carries information.
+- Use a `### Key changes` bullet list whenever the MR touches several files/layers or is non-trivial.
 - Do not invent ticket IDs or flag names — ask if unsure.
 - If multiple Jira tickets are involved, list them comma-separated.
 - If multiple apps need to be launched, list them comma-separated.
+- Output ONLY the fenced markdown block (plus a one-line intro if needed) — no extra commentary around it.
