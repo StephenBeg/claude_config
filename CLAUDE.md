@@ -64,6 +64,10 @@ Signal : présence d'un **numéro de ticket JIRA en entrée** → DEV. Besoin la
 **Déclenché quand l'utilisateur décrit un besoin large à découper (pas de ticket en entrée).**
 → **Invoquer la commande `/plan`** : elle contient le workflow complet (analyse, plan + DAG de dépendances, EPIC, création tickets JIRA parallélisables avec bloc `PROMPT`, `GO IMPLEMENTATION`, orchestrateur superviseur qui spawn les racines et déclenche les dépendants au `MERGED` jusqu'au drainage du DAG).
 
+Points clés (détail dans `/plan`) :
+- **SPIKE de recherche OBLIGATOIRE** : tout `/plan` (racine ou sous-plan) crée un ticket SPIKE représentant SA propre recherche/planification, sous l'EPIC. Ce SPIKE est passé **DONE quand le plan a fini de planifier — avant tout `GO IMPLEMENTATION`** (gate).
+- **Multi-plans (besoin trop gros)** : si le besoin traverse **plusieurs domaines fonctionnels** (ex : chantier sur tout le monorepo Malt), le plan racine ne planifie pas tout seul — il **découpe par domaine fonctionnel** et **délègue chaque domaine à un sous-plan** dans **une nouvelle surface CMUX** (un `/plan` par domaine). Il **orchestre ces sous-plans exactement comme le `GO IMPLEMENTATION` orchestre les `/dev`** (spawn + `await` background + réveil, DAG de domaines). Il **oriente chaque sous-plan** : EPIC à utiliser, périmètre du domaine, interfaces partagées, et consigne « crée ton propre SPIKE + où pousser tes tickets ». Chaque sous-plan planifie SON domaine puis supervise SON propre fan-out d'implémentation.
+
 ---
 
 ## WORKFLOW DE DEV — commande `/dev`
@@ -214,7 +218,7 @@ Ne pas utiliser l'outil `EnterWorktree` (crée le worktree dans `.claude/worktre
 - **Procédure de merge (après commentaire `Approved` ET pipeline verte) :** d'abord "rebase sans pipeline" via GitLab (`glab_mr_rebase`), puis merger (`glab_mr_merge`). Jamais l'un sans l'autre.
 
 **Interdictions absolues :**
-- **Jamais MERGER la MR sans commentaire `Approved` de `@stephen.begot`.** (La création de MR est autorisée et requise, cf. WORKFLOW DE DEV étape 6.)
+- **Jamais MERGER la MR sans commentaire `Approved` de `@stephen.begot`.** (La création de MR est autorisée et requise, cf. WORKFLOW DE DEV étape 8.)
 - **Jamais se mettre en co-author** dans les commits (pas de `Co-Authored-By: Claude` ni aucune variante).
 - **Jamais lancer les linters manuellement** (`ktlintCheck`, `eslint`, etc.) — le hook pre-commit husky les exécute automatiquement à chaque `git commit`. Committer directement et lire le résultat du hook.
 
