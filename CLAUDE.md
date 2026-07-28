@@ -102,7 +102,15 @@ Points clés (détail dans `/plan`) :
 - **`reviewer`** (`opus`) : revue adverse d'un diff en contexte frais (cherche à réfuter ; retourne des GAPS correctness/scope).
 - **`smoke-runner`** (`haiku`) : `bootRun` d'un service + verdict `BOOTED_OK`/`BOOT_FAILED`.
 
-Le **DOSAGE DU MODÈLE** (haiku mécanique / sonnet standard / opus raisonnement) reste la règle pour tout `Agent` ad-hoc — cf. commandes `/dev` `/plan` `/hotfix`.
+### DOSAGE DU MODÈLE DES SOUS-AGENTS — RÈGLE ABSOLUE
+
+Chaque fois que le thread principal crée un sous-agent (outil `Agent`, param `model`), il **DOIT dimensionner le model à la difficulté réelle de la tâche** — jamais sur-dimensionné (plus cher pour rien). L'orchestrateur reste sur son propre model ; seul le sous-agent est calibré. **Ne concerne QUE les sous-agents `Agent`** — **PAS les surfaces CMUX** spawn (`cmux-tab.sh spawn` lance un Claude complet, model géré par CMUX).
+
+- **`haiku`** : mécanique / déterministe, zéro raisonnement — grep, lister des fichiers, extraire un texte ADF, tailer/grep un log de boot, lookup `path:line` d'un symbole connu, lire un statut, appliquer un patch trivial déjà spécifié.
+- **`sonnet`** : standard — exploration/localisation de code, lecture multi-fichiers, écriture de tests jumeaux, implémentation bornée et bien cadrée, sweep de conventions, relecture Sonar.
+- **`opus`** : fort raisonnement — diagnostic de cause racine, design/archi, arbitrage non trivial, revue adverse (subagent `reviewer`), implémentation piégeuse (invariants, concurrence, event-sourcing), cadrage/découpage architectural difficile.
+
+**Défaut : commencer au model le PLUS BAS plausible**, remonter d'un cran seulement si la tâche l'exige. En cas de doute → le plus bas, surveiller le résultat. Échec par manque de capacité (pas de contexte) → relancer au cran au-dessus. **Jamais `opus` par réflexe** sur de l'exploration ou du mécanique.
 
 **Exceptions — pas de sous-agent :** action triviale (1 fichier déjà connu, 1 commande), question conversationnelle directe. En cas de doute sur la longueur → déléguer.
 
@@ -116,6 +124,28 @@ Le contexte est la ressource rare (perf dégrade quand il sature). En complémen
 - **Compaction** : quand un `/compact` (auto ou manuel) survient, **préserver impérativement** : la liste des **fichiers modifiés**, le **lien MR** + numéro, le **numéro de ticket JIRA** + statut courant, l'**état du `/goal`** en cours, et les décisions/tradeoffs pris. `/compact <instruction>` pour cibler.
 - **`/rewind` / checkpoints** : pour tenter une approche risquée — si elle échoue, rewind au lieu d'accumuler des tentatives ratées dans le contexte.
 - **Preuve, pas ré-exécution** : faire remonter par les subagents une CONCLUSION citant la sortie réelle (pas le dump), cf. VÉRIFICATION & BOUCLES des commandes.
+
+---
+
+## HEURES CALMES — 20h00 → 07h00 — RÈGLE ABSOLUE
+
+**Aucune ré-invocation de Claude entre 20h00 et 07h00 (heure locale).** Cause : des boucles de polling nocturnes ont brûlé ~2M tokens en une nuit, Mac en veille, pour attendre une pipeline / un `Approved` qui n'arrivent jamais la nuit.
+
+**Sont GELÉS entre 20h et 7h (STOPPER NET, aucun réveil programmé) :**
+- `/loop` auto-cadencé et `ScheduleWakeup` — suivi pipeline, attente `Approved`, tout polling d'état externe.
+- Boucles `until` en background qui **ré-invoquent** Claude à leur sortie (suivi MR/pipeline).
+- Orchestrateur `/plan` : `await` de DAG en background, réveils, **spawn de nouveaux `/dev`/sous-plans**.
+- Smoke-run / `bootRun` locaux lancés en boucle.
+
+**Comportement au franchissement de 20h — STOPPER NET :**
+- Ne PAS programmer de `ScheduleWakeup`, ne PAS relancer une boucle `until`, ne PAS `/loop`, ne PAS spawn.
+- Consigner l'état courant (fichiers modifiés, MR + numéro, ticket JIRA + statut, `/goal`, où reprendre) — cf. règle Compaction ci-dessus.
+- Onglet CMUX en `[WAIT]` avec mention « paused — quiet hours, resume ≥07h ».
+- **Relance MANUELLE le matin** par l'utilisateur. Aucun réveil auto n'est programmé.
+
+**Avant TOUTE programmation de `ScheduleWakeup`/`/loop`/boucle `until`/spawn** : vérifier l'heure locale (`date +%H%M`). Si ∈ [2000, 2359] ∪ [0000, 0659] → NE PAS programmer, appliquer STOPPER NET.
+
+**Exception unique** : action lancée par l'utilisateur en temps réel pendant cette plage (il est présent et vient de demander) → autorisée pour CETTE action ponctuelle, mais **ne pas enchaîner** sur un polling/loop qui survivrait à la nuit.
 
 ---
 
@@ -134,6 +164,7 @@ Le contexte est la ressource rare (perf dégrade quand il sature). En complémen
 
 | Contexte | Skill |
 |---|---|
+| Règles communes aux workflows `/dev` `/plan` `/hotfix` (questions à choix, accès JIRA, préfixes CMUX, vérif sources, vérif & boucles, smoke-run, /end avec MR, travail découvert, livrable) | `malt-workflow-commons` (invoqué en 1er par chaque workflow) |
 | Écrire/lire Obsidian (second cerveau local) | commande `/obsidian` |
 | Écrire/lire Notion | `notion` |
 | Lire code, linters, build errors sur repo Malt | `intellij-mcp` |
@@ -171,7 +202,7 @@ Exemples :
 
 ## /end AVEC MR — VÉRIF PIPELINE (RÈGLE ABSOLUE)
 
-Quand `/end` est lancé **avec une MR** : vérifier la pipeline **verte** avant de clore ; si rouge, diagnostiquer + fixer + repush (jamais master) jusqu'au vert ; job Sonar → passer par `/sonar` (API), sinon demander les erreurs à l'utilisateur. **Attente : jamais `Monitor`** (boucle `until` en background ou `/loop`). **Détail complet et canonique dans la commande `/dev` (section « /end AVEC MR — VÉRIF PIPELINE » : child pipeline job-factory, `/sonar`, boucle `until`).**
+Quand `/end` est lancé **avec une MR** : vérifier la pipeline **verte** avant de clore ; si rouge, diagnostiquer + fixer + repush (jamais master) jusqu'au vert ; job Sonar → passer par `/sonar` (API), sinon demander les erreurs à l'utilisateur. **Attente : jamais `Monitor`** (boucle `until` en background ou `/loop`). **Détail complet et canonique dans le skill `malt-workflow-commons` (section « § /end AVEC MR — VÉRIF PIPELINE » : child pipeline job-factory, `/sonar`, boucle `until`).**
 
 ---
 
@@ -216,10 +247,10 @@ Ne pas utiliser l'outil `EnterWorktree` (crée le worktree dans `.claude/worktre
 
 **LANGUE — RÈGLE ABSOLUE :** noms de branche, **subjects de commit** et titres de MR **TOUJOURS en anglais**. Le titre de MR prérempli par GitLab = subject du 1er commit → un commit en français donne un titre de MR en français. Le corps/description de commit peut rester en français, mais **la ligne subject est en anglais**. (Le bloc `## Description` de `/gitlab-resume` est déjà en anglais.)
 
-**FORMAT TITRE DE MR — RÈGLE ABSOLUE :** `[scope/domain] Titre`
-- Préfixe entre crochets = scope/domaine touché.
-- Exemple : `[accounting] Blablabla`
-- Le subject du 1er commit doit donc suivre ce format (il préremplit le titre de MR).
+**FORMAT TITRE DE MR — RÈGLE ABSOLUE :** `[<préfixe>] Titre`
+- **Ticket JIRA présent** (cas normal, y compris `/hotfix` qui crée son propre ticket) → préfixe = **le numéro de ticket**. Exemple : `[BILL-2854] Fix invoice rounding`.
+- **Pas de ticket** → `[devscoot]` ; ou `[hotfix]` si le travail est un hotfix sans ticket.
+- Le subject du 1er commit suit ce format (il préremplit le titre de MR).
 
 **LABEL DE MR — RÈGLE ABSOLUE :** chaque MR DOIT porter le label `squad-accounting`.
 

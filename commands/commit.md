@@ -25,9 +25,10 @@ git branch --show-current
 
 Si la branche est `master` :
 - Demander à l'utilisateur le nom de ticket/branche cible si pas évident depuis le contexte
-- Créer le worktree **hors du repo** :
+- Créer le worktree **hors du repo**, **base `origin/master`** (cf. CLAUDE.md GIT WORKFLOW — sans `origin/master`, git prend le HEAD courant) :
   ```bash
-  git worktree add ~/worktrees/malt/TICKET -b TICKET-description
+  git fetch origin master
+  git worktree add ~/worktrees/malt/TICKET -b TICKET-description origin/master
   ```
 - Travailler depuis ce worktree pour la suite
 - Rappeler à l'utilisateur qu'il faudra push depuis ce worktree

@@ -87,5 +87,5 @@ Fixer la cause exacte remontée (jamais deviner), commit + repush sur la branche
 ## Notes
 
 - Endpoints alternatifs : `/api/measures/component?component=$PROJECT_KEY&branch=$BRANCH&metricKeys=new_violations,new_coverage,...` pour les valeurs brutes.
-- Si l'API est injoignable / token invalide → fallback : ouvrir le dashboard (lien dans le log CI) et demander à l'utilisateur de coller les erreurs (exception "Sonar illisible" du `/dev`).
+- Si l'API est injoignable / token invalide → fallback : ouvrir le dashboard (lien dans le log CI) et demander à l'utilisateur de coller les erreurs (exception « Sonar illisible » — skill `malt-workflow-commons` § /end AVEC MR).
 - Ne pas logger le token en clair dans un fichier partagé du repo.

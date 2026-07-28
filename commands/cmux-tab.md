@@ -24,7 +24,7 @@ $ARGUMENTS
 ~/.claude/scripts/cmux-tab.sh status <status_dir> [<ticket>]
 ```
 
-`<PREFIX>` ∈ `PLAN | IMPL | TO REVIEW | END`.
+`<PREFIX>` = un préfixe de la **table unifiée** (skill `malt-workflow-commons` § PRÉFIXES DE HEADER CMUX) : `MAIN | PLAN | IMPL | PIPE | MR | ASK | BLOCK | WAIT | CLEAN | END`.
 `<STATE>` ∈ `SPAWNED | IN_PROGRESS | MR_OPEN | MERGED | BLOCKED`.
 
 ## `spawn` — nouvel onglet claude (opus 4.8) + prompt
@@ -113,8 +113,8 @@ Fichier `$STATUS_DIR/<TICKET>.status`, une ligne `STATE|timestamp|detail`, écri
 |---|---|---|
 | `SPAWNED` | écrit automatiquement par `spawn` | ref surface |
 | `IN_PROGRESS` | worktree + branche créés (étape 2) | — |
-| `MR_OPEN` | MR créée (étape 6) | lien MR |
-| `MERGED` | MR mergée par l'humain → To Validate (étape 11) | lien MR |
+| `MR_OPEN` | MR créée (étape 8) | lien MR |
+| `MERGED` | MR mergée par l'humain → To Validate (étape 14) | lien MR |
 | `BLOCKED` | blocage nécessitant l'humain | raison |
 
 L'orchestrateur lit ces états via `await` (bloquant) ou `status` (snapshot).
@@ -132,7 +132,7 @@ Le résumé reste **identique** entre `PLAN` et `IMPL` ; seul le préfixe change
 
 ## Comportement
 
-1. Si `$ARGUMENTS` commence par un préfixe connu (`PLAN`/`IMPL`/`TO REVIEW`/`END`) → `phase <PREFIX> "<reste>"`.
+1. Si `$ARGUMENTS` commence par un préfixe connu de la table unifiée (`MAIN`/`PLAN`/`IMPL`/`PIPE`/`MR`/`ASK`/`BLOCK`/`WAIT`/`CLEAN`/`END`) → `phase <PREFIX> "<reste>"`.
 2. Sinon, si `$ARGUMENTS` = `get` → afficher la surface courante.
 3. Sinon → `set "<$ARGUMENTS>"` (titre libre).
 4. Sans argument : déduire le préfixe de la phase de workflow en cours et un résumé de 3-4 mots décrivant le travail réel.

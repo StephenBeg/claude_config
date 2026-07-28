@@ -8,46 +8,20 @@ $ARGUMENTS
 
 Le besoin large à découper (pas de ticket JIRA en entrée).
 
-### QUESTIONS À CHOIX DE RÉPONSES — RÈGLE ABSOLUE
-
-Quand ce workflow pose une question à l'utilisateur **avec des choix de réponses** (options prédéfinies, arbitrage de découpage/scope/design, `AskUserQuestion`) :
-
-- **Explication détaillée AVANT les choix — obligatoire.** Avant de présenter les options, exposer le problème **point par point** : contexte, ce qui est en jeu, pourquoi la décision se pose, et pour **chaque option** ses implications / tradeoffs. But : que l'utilisateur comprenne réellement l'issue et les solutions, pas qu'il tranche à l'aveugle.
-- **INTERDICTION D'UTILISER CAVEMAN dans ce cas précis.** L'explication du problème ET les libellés/descriptions des choix sont rédigés en **prose normale, complète et claire**. Caveman reste actif pour tout le reste de la session — on ne le suspend QUE pour la formulation de la question et de ses options.
-
-### ACCÈS JIRA — MCP ou fallback API REST (RÈGLE ABSOLUE)
-
-Toute écriture/lecture JIRA de ce workflow (EPIC, User Story, tâches, liens de dépendance, transitions de statut) passe par le skill `/jira`. **Si le MCP Atlassian n'est PAS connecté** (auth échoue / tools `jira_*` indisponibles) → **NE PAS bloquer** : utiliser le **fallback API REST v3** documenté dans le skill `/jira` (curl + Basic auth, env `.zshrc`). Le skill `/jira` gère les deux : MCP si dispo, sinon REST. Vérifier au besoin : `curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" "$ATLASSIAN_SITE/rest/api/3/myself"` → 200.
+**RÈGLES COMMUNES — invoquer le skill `malt-workflow-commons` EN PREMIER.** Il porte les règles partagées par `/dev` `/plan` `/hotfix` (source de vérité unique) : **§ QUESTIONS À CHOIX DE RÉPONSES**, **§ ACCÈS JIRA**, **§ PRÉFIXES DE HEADER CMUX**, **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL**, **§ VÉRIFICATION & BOUCLES DE CONTRÔLE**, **§ TRAVAIL DÉCOUVERT EN COURS DE ROUTE**. Ce workflow y renvoie par le nom de section. (Le `/plan` n'a ni smoke-run ni MR ni livrable de dev.)
 
 ## DÉCISION D'ÉCHELLE — AVANT TOUT
 
 Avant de planifier, trancher : **plan simple** ou **multi-plans** ?
 
 - **Plan simple** (défaut) : le besoin tient dans **un seul domaine fonctionnel** → suivre le WORKFLOW ci-dessous tel quel.
-- **Multi-plans** : le besoin est **trop gros pour un seul plan** — il traverse **plusieurs domaines fonctionnels** (ex : un chantier sur tout le monorepo Malt, ou touchant accounting + billing + payments + front). Dans ce cas, **NE PAS tout planifier soi-même** : faire **un sous-plan par domaine fonctionnel**, chacun dans sa propre surface CMUX, et les **orchestrer** comme le GO IMPLEMENTATION orchestre les `/dev`. → voir la section **MODE MULTI-PLANS**.
+- **Multi-plans** : le besoin est **trop gros pour un seul plan** — il traverse **plusieurs domaines fonctionnels** (ex : chantier sur tout le monorepo Malt, ou touchant accounting + billing + payments + front). Dans ce cas, **NE PAS tout planifier soi-même** : faire **un sous-plan par domaine fonctionnel**, chacun dans sa propre surface CMUX, et les **orchestrer** comme le GO IMPLEMENTATION orchestre les `/dev`. → voir **MODE MULTI-PLANS**.
 
 Signal « trop gros » : > ~8-10 tâches parallélisables, ou le découpage naturel se fait d'abord **par domaine** avant de se faire par tâche. En cas de doute, proposer le mode multi-plans à l'utilisateur.
 
 ## WORKFLOW DE PLAN — RÈGLE ABSOLUE
 
-### PRÉFIXES DE HEADER CMUX — TABLE UNIFIÉE (RÈGLE ABSOLUE, commune à `/plan` `/dev` `/hotfix`)
-
-Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilisateur ; via `CMUX_SURFACE_ID`) **dès qu'un changement d'état survient**, avec `~/.claude/scripts/cmux-tab.sh phase <PREFIX> "<résumé 3-4 mots>"` :
-
-| Préfixe | Signification |
-|---|---|
-| `[MAIN]` | Processus qui en **orchestre d'autres** — reste en `[MAIN]` en permanence (c'est le cas d'un `/plan` **pendant le GO IMPLEMENTATION** : il supervise le DAG / les sous-plans). |
-| `[PLAN]` | En **réflexion / analyse**, rien de commencé (sync master, analyse, découpage, création des tickets). |
-| `[IMPL]` | En cours d'implémentation (peu utilisé par `/plan` racine ; c'est l'état des `/dev` enfants). |
-| `[PIPE]` | Implémentation terminée, en attente / en fix de pipeline verte. |
-| `[MR (numMR)]` | En attente d'approval sur une MR. |
-| `[ASK]` | Une **question a été posée à l'utilisateur**, on attend sa réponse (ex : attente du `GO IMPLEMENTATION`, arbitrage de découpage, blocage remonté). |
-| `[BLOCK]` | Processus **bloqué** pour une raison diverse (pas une question utilisateur). |
-| `[WAIT]` | En **attente d'un autre processus** (ex : `await` d'un ticket/sous-plan en vol) ou attente diverse. |
-| `[CLEAN]` | En cours de clean (worktree, artefacts). |
-| `[END]` | Tout est terminé — dernier état avant de fermer (DAG drainé, User Story `To Validate`). |
-
-**Règles :** la session **DOIT** mettre à jour le header dès qu'elle fait quelque chose ; le header peut **revenir en arrière** ; le résumé décrit CE QU'ON FAIT (3-4 mots, jamais le numéro de ticket seul) et reste identique entre phases, seul le préfixe change.
+**HEADER CMUX** : suivre le skill `malt-workflow-commons` **§ PRÉFIXES DE HEADER CMUX**. Spécificité `/plan` : il reste en **`[MAIN]`** pendant tout le GO IMPLEMENTATION (il orchestre le DAG / les sous-plans) ; `[ASK]` pour l'attente du `GO`, `[WAIT]` pour expliciter un `await` en vol.
 
 ### Étapes
 
@@ -60,74 +34,69 @@ TOUTES les étapes sont OBLIGATOIRES, dans l'ordre :
    git checkout master
    git pull --ff-only origin master
    ```
-   - **Vérifier `git branch --show-current` == `master` et `git status` propre** avant le `pull`. Si le working tree est sale (modifs traînant sur master, cf. GIT WORKFLOW) → **STOPPER**, porter les modifs vers un worktree puis `git checkout -- .`, et ne reprendre qu'une fois master vierge.
-   - `--ff-only` : si le pull n'est pas fast-forward → **STOPPER** et surfacer à l'utilisateur (master local divergent = anomalie à résoudre, jamais de merge/rebase silencieux).
-   - **Ne rien éditer/committer sur master** : cette étape sert uniquement à mettre master à jour pour que l'analyse et la base des worktrees (`origin/master`) soient à jour.
-3. **EPIC** — demander à l'utilisateur l'**EPIC** sous laquelle rattacher le travail (le plus tôt possible : le SPIKE et la User Story en ont besoin). En **mode multi-plans**, c'est cette EPIC que chaque sous-plan recevra pour savoir **où pousser ses tickets**.
-4. **Ticket SPIKE de recherche — OBLIGATOIRE (skill `/jira`).** Créer **UN ticket SPIKE** sous l'EPIC qui représente **LA recherche/étude DE CE PLAN** (l'effort de planification lui-même : exploration du code, cadrage, découpage, DAG).
-   - Type `Spike` si disponible dans le projet, sinon `Task` avec titre préfixé `[SPIKE]`.
-   - **Titre + Description en ANGLAIS**, décrivant le périmètre étudié et le livrable attendu (plan + tickets + DAG).
+   - **Vérifier `git branch --show-current` == `master` et `git status` propre** avant le `pull`. Si le working tree est sale (cf. GIT WORKFLOW) → **STOPPER**, porter les modifs vers un worktree puis `git checkout -- .`, reprendre une fois master vierge.
+   - `--ff-only` : si le pull n'est pas fast-forward → **STOPPER** et surfacer (master local divergent = anomalie, jamais de merge/rebase silencieux).
+   - **Ne rien éditer/committer sur master** : cette étape met juste master à jour pour que l'analyse et la base des worktrees (`origin/master`) soient à jour.
+3. **EPIC** — demander l'**EPIC** sous laquelle rattacher le travail (le plus tôt possible : le SPIKE et la User Story en ont besoin). En **mode multi-plans**, c'est cette EPIC que chaque sous-plan recevra pour savoir **où pousser ses tickets**.
+4. **Ticket SPIKE de recherche — OBLIGATOIRE (skill `/jira`).** Créer **UN ticket SPIKE** sous l'EPIC représentant **LA recherche/étude DE CE PLAN** (l'effort de planification : exploration, cadrage, découpage, DAG).
+   - Type `Spike` si disponible, sinon `Task` avec titre préfixé `[SPIKE]`.
+   - **Titre + Description en ANGLAIS**, décrivant le périmètre étudié et le livrable (plan + tickets + DAG).
    - Le passer en **In Progress** au début de l'analyse.
-   - **En mode multi-plans** : ce SPIKE couvre la recherche de **décomposition** (identifier les domaines) ; **chaque sous-plan créera SON PROPRE SPIKE** pour la recherche de son domaine.
-5. **Analyse** — étudier le prompt utilisateur, le code, et les sources fournies. **Déléguer l'exploration à des sous-agents** (ORCHESTRATION). Sur repo Malt : note Obsidian `[[Monorepo Malt - Carte technique]]` d'abord (`/obsidian` recherche), sous-agent si insuffisant. **Dimensionner le model de ces sous-agents** (cf. DOSAGE DU MODÈLE ci-dessous) : l'exploration/localisation de code se fait en `sonnet` (voire `haiku` pour un simple grep/lookup) ; ne réserver `opus` qu'à un sous-agent qui doit **raisonner** un cadrage architectural difficile.
-   - **VÉRIFICATION DES SOURCES CONTRE LE RÉEL — RÈGLE ABSOLUE.** La mémoire (notes Obsidian, mémoire persistante, souvenirs de chantiers passés) est un **point de départ, jamais une vérité**. Elle est **souvent périmée ou fausse** (drift). Avant d'ancrer une décision de plan sur un fait mémorisé, **le confirmer contre le réel** :
-     - **Code** : lire le fichier/symbole réel **sur `master` fraîchement synchronisé** (étape 2), pas le souvenir de sa localisation/signature. Si un sous-agent cite un fichier/fonction/flag → il DOIT donner le `path:line` vu dans le code courant, pas de mémoire.
-     - **Runtime / prod** : pour tout fait sur le comportement en prod (état d'un FF, volumétrie, erreurs, chemin réellement emprunté) → **vérifier via Datadog** (`/datadog` : logs/traces/métriques) plutôt que supposer.
-     - **JIRA / FF / config** : état d'un ticket, d'un feature flag, d'une config → lire la source vivante (JIRA, fichiers ff4j, app-config), pas la mémoire.
-     - **Drift** : si le réel contredit une note Obsidian → **corriger la note** (`/obsidian` capture) dans la foulée.
-     - Chaque affirmation structurante du plan doit être **traçable à une source réelle vérifiée cette session** (path:line, requête Datadog, ticket JIRA). Une hypothèse non vérifiée doit être **marquée explicitement** comme telle dans le plan, jamais présentée comme un fait.
-6. **Plan complet + DAG de dépendances** — plan d'implémentation découpé en **tâches parallélisables**. Chaque tâche parallélisable = 1 tâche JIRA. **Identifier explicitement les dépendances entre tâches** (B ne démarre qu'après merge de A) → construire le **DAG** : tâches **racines** (sans dépendance, lançables tout de suite) vs **dépendantes** (déclenchées après merge de leur(s) parent(s)).
-7. **User Story unique** (skill `/jira`) — créer **UNE SEULE User Story** sous l'EPIC. Elle **décrit le besoin métier global** (le QUOI, pas le COMMENT). But : ne pas polluer le board de l'EPIC avec plein de tickets — toutes les tâches vivent **à l'intérieur** de cette story et sont regroupées par elle (plus besoin de préfixe de groupe sur les titres).
+   - **En mode multi-plans** : ce SPIKE couvre la recherche de **décomposition** (identifier les domaines) ; **chaque sous-plan créera SON PROPRE SPIKE** pour son domaine.
+5. **Analyse** — étudier le prompt, le code, les sources fournies. **Déléguer l'exploration à des sous-agents** (ORCHESTRATION, CLAUDE.md — **dimensionner le model** cf. CLAUDE.md § DOSAGE DU MODÈLE : exploration/localisation en `sonnet`, `haiku` pour un simple grep/lookup, `opus` seulement pour raisonner un cadrage architectural difficile). Sur repo Malt : note Obsidian `[[Monorepo Malt - Carte technique]]` d'abord (`/obsidian` recherche), sous-agent si insuffisant.
+   - **VÉRIFIER LES SOURCES CONTRE LE RÉEL** : suivre le skill commons **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL** — la mémoire (Obsidian, souvenirs) est un point de départ jamais une vérité ; confirmer code (`path:line` sur `master` frais), runtime (Datadog/Sentry), JIRA/FF/config (source vivante) ; corriger la note Obsidian en cas de drift. Chaque fait structurant du plan = traçable à une source vérifiée cette session ; hypothèse non vérifiée marquée explicitement.
+6. **Plan complet + DAG de dépendances** — plan découpé en **tâches parallélisables** (1 tâche parallélisable = 1 tâche JIRA). **Identifier explicitement les dépendances** (B ne démarre qu'après merge de A) → **DAG** : tâches **racines** (sans dépendance) vs **dépendantes** (déclenchées après merge de leur(s) parent(s)).
+7. **User Story unique** (skill `/jira`) — créer **UNE SEULE User Story** sous l'EPIC. Elle **décrit le besoin métier global** (le QUOI, pas le COMMENT). But : ne pas polluer le board de l'EPIC — toutes les tâches vivent **à l'intérieur** de cette story.
    - **Titre + Description OBLIGATOIREMENT en ANGLAIS**, point de vue **MÉTIER**.
-   - **DESCRIPTION DU PARAPLUIE = complète, belle, remise à jour après étude — RÈGLE ABSOLUE.** Le ticket parapluie (que ce soit cette User Story, ou l'EPIC en mode multi-plans) porte **la description de référence du besoin**. Après l'analyse (étape 5-6), **réécrire/mettre à jour cette description** pour qu'elle reflète la compréhension affinée du besoin : mise en forme propre et professionnelle (jamais un paragraphe brut) — résumé du besoin, contexte, objectif métier, périmètre couvert, découpage en tâches (liste des sous-tickets et leur rôle), définition of done globale. Lisible de bout en bout par une personne non technique du produit. C'est LA source de vérité du chantier ; ne pas la laisser à l'état d'ébauche de création.
-   - **La User Story = le ticket parapluie dont le statut DOIT suivre l'avancée du chantier** (cf. CYCLE DE VIE DU TICKET PARAPLUIE ci-dessous). La laisser en `To Do` / `Open` à la création (tant que le GO n'a pas été donné).
-8. **Création des tâches JIRA DANS la User Story** (skill `/jira`) — une tâche par tâche parallélisable, chacune **enfant de la User Story** (étape 7) via le champ **parent** (hiérarchie Epic → Story → Task/Sub-task). Chaque tâche :
-   - **Titre + Description OBLIGATOIREMENT en ANGLAIS**, décrivant le besoin d'un point de vue **MÉTIER** (le QUOI, pas le COMMENT). Pas de préfixe : la User Story parente assure déjà le regroupement.
-   - **DESCRIPTION = lisible par un non-technique produit — RÈGLE ABSOLUE.** La description N'EST PAS le prompt. Elle est **mise en forme proprement et professionnellement** (jamais un paragraphe brut) : un titre/résumé du besoin, des sections claires (contexte, objectif, critères d'acceptation / definition of done), bullets, gras sur les termes clés. Un PM ou une personne non technique doit la comprendre. **AUCUN bloc `PROMPT`, aucun détail d'implémentation technique dans la description.**
-   - **Champ "Prompt" (`customfield_11956`) = la consigne d'implémentation, EN FRANÇAIS — RÈGLE ABSOLUE.** Le prompt exact qui servira à lancer la tâche va dans CE CHAMP, plus JAMAIS dans la description. Y inclure une ligne metadata **`DEPENDS_ON: TICKET-A, TICKET-B`** (ou `DEPENDS_ON: -` si racine).
-     - **Le prompt doit être LE PLUS COMPLET POSSIBLE** : le travail doit être **mâché** pour le `/dev` qui l'implémentera, afin qu'il reste focus sur SA partie et **économise ses tokens** (pas de re-exploration). Y mettre : périmètre exact, fichiers/symboles concernés avec `path:line`, pattern jumeau à copier, contrats/interfaces partagés, cas de test attendus, pièges connus, et tout contexte partagé utile.
+   - **DESCRIPTION DU PARAPLUIE = complète, belle, remise à jour après étude — RÈGLE ABSOLUE.** Le ticket parapluie porte **la description de référence du besoin**. Après l'analyse (étape 5-6), **réécrire/mettre à jour cette description** : mise en forme propre et professionnelle — résumé du besoin, contexte, objectif métier, périmètre, découpage en tâches (liste des sous-tickets et leur rôle), definition of done globale. Lisible de bout en bout par une personne non technique. C'est LA source de vérité du chantier.
+   - **La User Story = le ticket parapluie dont le statut suit l'avancée** (cf. CYCLE DE VIE DU TICKET PARAPLUIE). La laisser en `To Do` / `Open` à la création (tant que le GO n'a pas été donné).
+8. **Création des tâches JIRA DANS la User Story** (skill `/jira`) — une tâche par tâche parallélisable, chacune **enfant de la User Story** via le champ **parent** (Epic → Story → Task). Chaque tâche :
+   - **Titre + Description OBLIGATOIREMENT en ANGLAIS**, point de vue **MÉTIER** (le QUOI). Pas de préfixe : la User Story parente assure le regroupement.
+   - **DESCRIPTION = lisible par un non-technique produit — RÈGLE ABSOLUE.** La description N'EST PAS le prompt. Mise en forme proprement (titre/résumé, sections contexte/objectif/critères d'acceptation, bullets, gras). **AUCUN bloc `PROMPT`, aucun détail d'implémentation technique dans la description.**
+   - **Champ "Prompt" (`customfield_11956`) = la consigne d'implémentation, EN FRANÇAIS — RÈGLE ABSOLUE.** Le prompt exact qui lancera la tâche va dans CE CHAMP, jamais dans la description. Y inclure une ligne `DEPENDS_ON: TICKET-A, TICKET-B` (ou `DEPENDS_ON: -` si racine).
+     - **Le prompt doit être LE PLUS COMPLET POSSIBLE** : travail **mâché** pour le `/dev` (focus + économie de tokens, pas de re-exploration). Périmètre exact, fichiers/symboles avec `path:line`, pattern jumeau à copier, contrats/interfaces partagés, cas de test attendus, pièges connus.
      - **Écriture du champ** (doc ADF) via API REST :
        ```
        curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" -X PUT -H "Content-Type: application/json" \
          "$ATLASSIAN_SITE/rest/api/3/issue/<TICKET>" \
          -d '{"fields":{"customfield_11956":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"<PROMPT complet>"}]}]}}}'
        ```
-   - **Label `Accounting/Bookkeeping` OBLIGATOIRE** sur CHAQUE tâche créée (`"labels":["Accounting/Bookkeeping"]` dans le payload de création). Idem pour la User Story parapluie (étape 7) et l'EPIC.
-   - **NE JAMAIS assigner à la création — RÈGLE ABSOLUE.** Les tickets restent **non assignés** tant que le dev n'a pas commencé. L'assignation à `stephen.begot` est faite **par le `/dev` lui-même, au moment où il passe le ticket `In Progress`** (step 6 de `/dev`), jamais par le plan à la création ni au spawn.
-   - **Liens de dépendance JIRA** : pour chaque dépendance du DAG, créer un lien **"is blocked by"** (dépendant → parent).
-   - **MODE DE LANCEMENT selon le TYPE de ticket — RÈGLE ABSOLUE** : le champ `Prompt` doit dire explicitement quel workflow lancer :
+   - **Label `Accounting/Bookkeeping` OBLIGATOIRE** sur CHAQUE tâche (`"labels":["Accounting/Bookkeeping"]`). Idem User Story parapluie (étape 7) et EPIC.
+   - **NE JAMAIS assigner à la création — RÈGLE ABSOLUE.** Les tickets restent **non assignés**. L'assignation à `stephen.begot` est faite **par le `/dev` lui-même** au passage `In Progress` (step 6 de `/dev`).
+   - **Liens de dépendance JIRA** : pour chaque dépendance du DAG, lien **"is blocked by"** (dépendant → parent).
+   - **MODE DE LANCEMENT selon le TYPE — RÈGLE ABSOLUE** : le champ `Prompt` dit explicitement quel workflow lancer :
      - **Ticket d'implémentation** (code) → `lance /dev`.
-     - **Ticket SPIKE / recherche / investigation** (dans le DAG, distinct du SPIKE de planification de l'étape 4) → **`lance /plan`**, PAS `/dev`. Un SPIKE n'est pas un simple "va chercher une réponse" : c'est une mini-mission qui peut **découvrir du travail, créer ses propres tickets et orchestrer son propre sous-ensemble** (cf. section **SPIKE = SOUS-PLAN RÉCURSIF**).
-9. **SPIKE → DONE (GATE avant GO).** Une fois le plan terminé (User Story + toutes les tâches créées + DAG + liens de dépendance posés) : d'abord **passer une revue adverse du plan en contexte frais** (VÉRIFICATION & BOUCLES levier 3 — sous-agent `opus` cherchant domaine/tâche/dépendance/contrat oublié), intégrer les GAPS ; puis **finaliser la description du ticket parapluie** (cf. étape 7 — description complète, belle, avec la liste des sous-tickets et leur rôle, la DoD globale ; source de vérité du chantier), PUIS **passer le ticket SPIKE de l'étape 4 en `DONE`**. **Le SPIKE DOIT être DONE avant tout `GO IMPLEMENTATION`** — c'est le signal que la planification est close. (En multi-plans : chaque sous-plan met SON spike à DONE quand SON domaine est planifié ; le plan racine met son spike de décomposition à DONE quand tous les domaines ont été dispatchés/planifiés.)
-10. **Attendre le `GO IMPLEMENTATION`** de l'utilisateur. Ne rien lancer avant. → onglet `[ASK] <résumé>` (question en attente).
-11. **GO IMPLEMENTATION — orchestrateur superviseur.** → onglet **`[MAIN]` <résumé>** dès le GO et **pendant toute la supervision** (ce process orchestre d'autres process, il reste en `[MAIN]` ; utiliser `[WAIT]` seulement si l'on veut expliciter une attente d'`await`, mais `[MAIN]` est l'état par défaut de l'orchestrateur). Superviser le DAG jusqu'au bout (voir `/cmux-tab`, section « Fan-out avec dépendances ») :
-    - **Passer le ticket parapluie (User Story, étape 7) en `In Progress`** (skill `/jira`) — première action du GO, signale que le chantier démarre.
+     - **Ticket SPIKE / recherche** (dans le DAG, distinct du SPIKE de planification de l'étape 4) → **`lance /plan`**, PAS `/dev` (mini-mission qui peut découvrir du travail, créer ses tickets et orchestrer son sous-ensemble — cf. **SPIKE = SOUS-PLAN RÉCURSIF**).
+9. **SPIKE → DONE (GATE avant GO).** Une fois le plan terminé (User Story + toutes les tâches + DAG + liens) : d'abord **revue adverse du plan en contexte frais** (skill commons § VÉRIFICATION & BOUCLES levier 3 — subagent `reviewer` `opus` cherchant domaine/tâche/dépendance/contrat oublié), intégrer les GAPS ; puis **finaliser la description du ticket parapluie** (étape 7) ; PUIS **passer le ticket SPIKE de l'étape 4 en `DONE`**. **Le SPIKE DOIT être DONE avant tout `GO IMPLEMENTATION`.** (Multi-plans : chaque sous-plan met SON spike DONE quand SON domaine est planifié ; le plan racine met son spike de décomposition DONE quand tous les domaines sont dispatchés.)
+10. **Attendre le `GO IMPLEMENTATION`** de l'utilisateur. Ne rien lancer avant. → onglet `[ASK] <résumé>`.
+11. **GO IMPLEMENTATION — orchestrateur superviseur.** → onglet **`[MAIN]` <résumé>** dès le GO et **pendant toute la supervision**. Superviser le DAG jusqu'au bout :
+    - **Passer le ticket parapluie (User Story) en `In Progress`** (skill `/jira`) — première action du GO.
     - **Créer le dossier de statuts partagé** : `STATUS_DIR=/tmp/claude_plan_<EPIC>_status` (header `TMP_INDEX`).
-    - **Spawn les tickets racines uniquement** (`DEPENDS_ON` vide), chacun dans **une nouvelle surface DANS LE MÊME WORKSPACE CMUX que le process qui lance** (jamais autre workflow ni workspace focus utilisateur), en passant `status_dir` + `ticket`. **Le workflow lancé dépend du TYPE du ticket** (`/dev` pour l'implémentation, **`/plan` pour un SPIKE**, cf. étape 8 et section SPIKE = SOUS-PLAN RÉCURSIF) :
+    - **Spawn les tickets racines uniquement** (`DEPENDS_ON` vide), chacun dans **une nouvelle surface DANS LE MÊME WORKSPACE CMUX que le process qui lance**, en passant `status_dir` + `ticket`. Le workflow lancé dépend du TYPE (`/dev` pour l'implémentation, **`/plan` pour un SPIKE**) :
       ```
-      ~/.claude/scripts/cmux-tab.sh spawn "<contenu du champ Prompt (customfield_11956) du ticket + numéro JIRA + consigne: lance /dev OU /plan selon le type>" "<TICKET-XXX résumé>" ~/Documents/projects/malt "$STATUS_DIR" TICKET-XXX
+      ~/.claude/scripts/cmux-tab.sh spawn "<contenu du champ Prompt du ticket + numéro JIRA + consigne: lance /dev OU /plan selon le type>" "<TICKET-XXX résumé>" ~/Documents/projects/malt "$STATUS_DIR" TICKET-XXX
       ```
-      `spawn` injecte le préambule "report ton statut" et écrit `SPAWNED`. Cible le workspace du process appelant (`$CMUX_SURFACE_ID`, jamais `$CMUX_WORKSPACE_ID`). Chaque surface = un Claude exécutant `/dev` (ticket d'implémentation) OU `/plan` (ticket SPIKE → sous-plan récursif).
-      **cwd OBLIGATOIRE = `~/Documents/projects/malt`** (repo principal). Jamais un worktree ni le `$PWD` du Claude de plan : l'agent lancé crée son propre worktree (ou, pour un `/plan`, ses propres tickets + worktrees enfants).
-    - **Écouter chaque ticket en vol** : `~/.claude/scripts/cmux-tab.sh await "$STATUS_DIR" TICKET-XXX` **EN BACKGROUND** (`run_in_background: true`) — jamais en foreground (cap 10 min du tool Bash). Le harness re-réveille l'orchestrateur à la sortie de l'`await`.
-    - **SPAWN IDEMPOTENT — un timeout/erreur du spawn ≠ échec (RÈGLE ABSOLUE).** Le tool Bash cape à 120s ; or `cmux new-surface`+`send` peut dépasser ce cap OU la résolution workspace `cmux workspace list` hang par intermittence sous charge. Un spawn qui « timeout » ou sort en erreur **a pu quand même créer la surface + lancer l'agent**. Donc : (1) lancer les `spawn` lents **en `run_in_background: true`** ; (2) **AVANT de re-spawn un ticket, vérifier que `<ticket>.status` est VIDE** (`[ -s <dir>/<ticket>.status]`) — un re-spawn sur un ticket déjà lancé crée un **worker DOUBLON sur le même worktree/branche** → deux agents s'écrasent mutuellement (incident vécu BILL-2909). En cas de flakiness workspace persistante, bypasser la résolution en appelant `new-surface --workspace <shortref>` en dur (cf. [[reference_cmux_tab_workspace_resolution]]).
-    - **RESCAN DES ENFANTS DE L'UMBRELLA — À CHAQUE RÉVEIL (RÈGLE ABSOLUE).** Un ticket lancé (`/dev` OU `/plan`) peut **créer de nouveaux tickets** sous le parapluie (bug découvert, spike de suivi, sous-tâche). Ces tickets sont **invisibles de tes status files**. Donc à chaque réveil, **re-lister les enfants de la User Story parapluie via `/jira`** (`parent = <umbrella>`), comparer à ton DAG connu, et **intégrer tout orphelin** : poser ses liens de dépendance, décider son mode (`/dev` vs `/plan`), le spawn+await quand débloqué. Ne JAMAIS te fier uniquement au `STATUS_DIR` : le JIRA (enfants de l'umbrella) est la source de vérité du périmètre.
-    - **Déclencher les dépendants** : à chaque réveil (un `await` sort), recalculer les tickets dont **tous** les `DEPENDS_ON` sont dans un état terminal *satisfaisant*, les spawn, et lancer leur `await` en background. État terminal satisfaisant = **`MERGED`** pour un ticket d'implémentation (`/dev`), **`DONE`** (sous-DAG drainé) pour un ticket SPIKE lancé en `/plan`. Répéter jusqu'au **drainage complet du DAG** (arbre entier, tous niveaux).
-    - **Gestion `BLOCKED`** : si un `await` sort en **code 3** (ticket `BLOCKED`), surfacer le blocage à l'utilisateur (onglet `[ASK]`) et **ne pas spawn** les dépendants de ce ticket tant que non résolu. Un SPIKE-sous-plan qui bute sur une **réponse externe** (équipe tierce, décision humaine) reporte `BLOCKED` et remonte la question exacte à poser.
+      `spawn` injecte le préambule "report ton statut" et écrit `SPAWNED`. Cible `$CMUX_SURFACE_ID` (jamais `$CMUX_WORKSPACE_ID`). **cwd OBLIGATOIRE = `~/Documents/projects/malt`** (repo principal ; l'agent lancé crée son propre worktree).
+    - **Écouter chaque ticket en vol** : `~/.claude/scripts/cmux-tab.sh await "$STATUS_DIR" TICKET-XXX` **EN BACKGROUND** (`run_in_background: true`) — jamais en foreground (cap 10 min). Le harness re-réveille l'orchestrateur à la sortie.
+    - **SPAWN IDEMPOTENT — un timeout/erreur du spawn ≠ échec (RÈGLE ABSOLUE).** Le tool Bash cape à 120s ; un spawn qui « timeout » a pu quand même créer la surface + lancer l'agent. Donc : (1) `spawn` lents en `run_in_background: true` ; (2) **AVANT de re-spawn un ticket, vérifier que `<ticket>.status` est VIDE** (`[ -s <dir>/<ticket>.status ]`) — un re-spawn crée un **worker DOUBLON sur le même worktree/branche** (incident BILL-2909). Flakiness workspace persistante → `new-surface --workspace <shortref>` en dur (cf. `[[reference_cmux_tab_workspace_resolution]]`).
+    - **RESCAN DES ENFANTS DE L'UMBRELLA — À CHAQUE RÉVEIL (RÈGLE ABSOLUE).** Un ticket lancé peut **créer de nouveaux tickets** sous le parapluie (invisibles des status files). À chaque réveil, **re-lister les enfants de la User Story via `/jira`** (`parent = <umbrella>`), comparer au DAG connu, **intégrer tout orphelin** (liens, mode `/dev` vs `/plan`, spawn+await quand débloqué). Le JIRA est la source de vérité du périmètre, pas le `STATUS_DIR`.
+    - **HEURES CALMES 20h–7h (RÈGLE ABSOLUE, cf. CLAUDE.md) :** à chaque réveil, vérifier `date +%H%M` AVANT tout spawn ou relance d'`await`. Si ∈ [2000,0659] → **STOPPER NET** : ne PAS spawn, ne PAS relancer d'`await`, ne PAS programmer de réveil. Consigner l'état du DAG et le point de reprise, onglet `[WAIT]` « paused — quiet hours ». **Relance manuelle le matin.**
+    - **Déclencher les dépendants** : à chaque réveil, recalculer les tickets dont **tous** les `DEPENDS_ON` sont dans un état terminal *satisfaisant* (**`MERGED`** pour un `/dev`, **`DONE`** pour un SPIKE lancé en `/plan`), les spawn, lancer leur `await` en background. Répéter jusqu'au **drainage complet du DAG**.
+    - **Gestion `BLOCKED`** : si un `await` sort en **code 3** (ticket `BLOCKED`), surfacer (onglet `[ASK]`) et **ne pas spawn** les dépendants tant que non résolu.
 12. **Fin du Claude de plan** — une fois le DAG drainé (**toutes les tâches `MERGED`**). → onglet `[END] <résumé>` :
-    - **Passer le ticket parapluie (User Story) en `To Validate`** (skill `/jira`) — toutes les tâches sont mergées, le chantier attend validation. Ne **jamais** passer la User Story directement en `Done` soi-même : la validation est un acte humain.
-    - S'arrêter, en **laissant le terminal CMUX ouvert**. Ne pas fermer la surface. (Si blocage explicité au lieu du drainage complet → laisser la User Story en `In Progress` et surfacer le blocage, cf. gestion `BLOCKED`.)
+    - **Passer le ticket parapluie (User Story) en `To Validate`** (skill `/jira`). Ne **jamais** passer en `Done` soi-même (validation humaine).
+    - S'arrêter en **laissant le terminal CMUX ouvert**. (Blocage explicité au lieu du drainage → laisser la User Story en `In Progress` et surfacer.)
 
 ## CYCLE DE VIE DU TICKET PARAPLUIE (User Story) — RÈGLE ABSOLUE
 
-Le ticket parapluie (la **User Story** de l'étape 7) DOIT refléter l'état réel du chantier à tout moment. Transitions obligatoires (skill `/jira`) :
+Le ticket parapluie (la **User Story** de l'étape 7) DOIT refléter l'état réel du chantier. Transitions (skill `/jira`) :
 
 - **`To Do` / `Open`** — à la création (étape 7), tant que le GO n'a pas été donné.
 - **`In Progress`** — dès le `GO IMPLEMENTATION` (étape 11, première action).
 - **`To Validate`** — quand **toutes** les tâches enfants sont `MERGED` (étape 12).
 - **`Done`** — **jamais par Claude** : transition humaine après validation.
 
-En **multi-plans** : chaque sous-plan gère le cycle de vie de SA User Story de domaine ; le plan racine gère la User Story racine si elle existe (sinon l'EPIC fait office de parapluie et n'est pas transitionnée par Claude).
+En **multi-plans** : chaque sous-plan gère le cycle de vie de SA User Story de domaine ; le plan racine gère la User Story racine si elle existe (sinon l'EPIC fait office de parapluie, non transitionné par Claude).
 
 ## MODE MULTI-PLANS — découper en sous-plans par domaine
 
@@ -138,65 +107,43 @@ Quand le besoin est **trop gros pour un seul plan** (cf. DÉCISION D'ÉCHELLE), 
 1. **Titre onglet** + **Sync master** (comme ci-dessus).
 2. **EPIC** — demander l'EPIC parapluie du chantier.
 3. **SPIKE de décomposition** (skill `/jira`, sous l'EPIC) — représente **la recherche du plan racine** : identifier les domaines fonctionnels impactés et leurs interfaces. Le passer **In Progress**.
-4. **Analyse de décomposition** (sous-agents) — identifier les **domaines fonctionnels** (ex : accounting, billing, payments, front, ...) et les **dépendances inter-domaines** (un domaine peut être bloqué par un autre → DAG de domaines).
+4. **Analyse de décomposition** (sous-agents) — identifier les **domaines fonctionnels** (accounting, billing, payments, front, ...) et les **dépendances inter-domaines** (DAG de domaines).
 5. **Créer le dossier de statuts** : `STATUS_DIR=/tmp/claude_plan_<EPIC>_status` (header `TMP_INDEX`).
 6. **Spawn un `/plan` par domaine racine** (domaines sans dépendance inter-domaine), chacun dans **une nouvelle surface du MÊME workspace CMUX** (`$CMUX_SURFACE_ID`), cwd `~/Documents/projects/malt` :
    ```
    ~/.claude/scripts/cmux-tab.sh spawn "<prompt de sous-plan : périmètre du domaine + 'lance /plan' + ORIENTATION>" "<DOMAINE résumé>" ~/Documents/projects/malt "$STATUS_DIR" DOMAIN-<domaine>
    ```
-   **ORIENTATION OBLIGATOIRE dans le prompt de chaque sous-plan** (sinon il ne saura pas où pousser ses tickets) :
+   **ORIENTATION OBLIGATOIRE dans le prompt de chaque sous-plan** :
    - **l'EPIC** parapluie à utiliser (le sous-plan crée SA User Story de domaine sous cette EPIC) ;
-   - le **périmètre exact** du domaine (ce qui est à lui, ce qui appartient aux autres domaines) ;
-   - les **interfaces/contrats** partagés avec les autres domaines (pour éviter les collisions) ;
+   - le **périmètre exact** du domaine (ce qui est à lui, ce qui appartient aux autres) ;
+   - les **interfaces/contrats** partagés avec les autres domaines (éviter les collisions) ;
    - la consigne : **le sous-plan crée son PROPRE SPIKE**, planifie SON domaine, met son spike DONE, puis **attend le GO** ;
-   - le `STATUS_DIR` + son identifiant `DOMAIN-<domaine>` pour reporter son statut.
-7. **Orchestrer les sous-plans** — pour chaque domaine en vol : `await "$STATUS_DIR" DOMAIN-<domaine>` **EN BACKGROUND**. À chaque réveil (un sous-plan reporte `PLANNED` = son domaine est planifié + son spike DONE), déclencher les **sous-plans dépendants** (dont tous les domaines parents sont `PLANNED`). Répéter jusqu'à ce que **tous les domaines soient planifiés**.
-   - États reportés par un sous-plan : `IN_PROGRESS` (analyse) → `PLANNED` (tickets du domaine créés, spike domaine DONE, en attente de GO) → `DONE` (DAG du domaine drainé) | `BLOCKED` (surfacer à l'utilisateur).
+   - le `STATUS_DIR` + son identifiant `DOMAIN-<domaine>` pour reporter.
+7. **Orchestrer les sous-plans** — pour chaque domaine en vol : `await "$STATUS_DIR" DOMAIN-<domaine>` **EN BACKGROUND**. À chaque réveil (un sous-plan reporte `PLANNED` = domaine planifié + spike DONE), déclencher les **sous-plans dépendants**. Répéter jusqu'à ce que **tous les domaines soient planifiés**.
+   - États reportés par un sous-plan : `IN_PROGRESS` (analyse) → `PLANNED` (tickets créés, spike domaine DONE, attente GO) → `DONE` (DAG du domaine drainé) | `BLOCKED`.
 8. **SPIKE racine → DONE** une fois **tous les domaines dispatchés et planifiés** (tous `PLANNED`).
-9. **GO IMPLEMENTATION en multi-plans** — deux niveaux d'orchestration :
-   - **Chaque sous-plan supervise le GO de SON domaine** (il est un `/plan` complet → il spawn les `/dev` de son domaine et draine son propre DAG). Relayer le `GO IMPLEMENTATION` de l'utilisateur à chaque sous-plan (ou déclencher automatiquement selon le DAG de domaines) ; le sous-plan reporte `DONE` quand son domaine est drainé.
-   - **Le plan racine supervise les sous-plans** : il déclenche les domaines dépendants au fur et à mesure des `DONE`/`PLANNED`, jusqu'au drainage du **DAG de domaines**.
+9. **GO IMPLEMENTATION en multi-plans** — deux niveaux :
+   - **Chaque sous-plan supervise le GO de SON domaine** (il spawn les `/dev` de son domaine et draine son propre DAG). Relayer le `GO` de l'utilisateur à chaque sous-plan ; le sous-plan reporte `DONE` quand son domaine est drainé.
+   - **Le plan racine supervise les sous-plans** : déclenche les domaines dépendants au fur et à mesure des `DONE`/`PLANNED`, jusqu'au drainage du **DAG de domaines**.
 10. **Fin** — le plan racine s'arrête seulement quand **tous les sous-plans sont `DONE`** (ou blocage explicité), terminal CMUX laissé ouvert.
 
 ## SPIKE = SOUS-PLAN RÉCURSIF — RÈGLE ABSOLUE
 
-Un **ticket SPIKE présent dans le DAG** (recherche/investigation/cadrage — à NE PAS confondre avec le SPIKE de planification du plan lui-même, étape 4) n'est **jamais lancé en `/dev`**. Il est lancé en **`/plan`**, car une investigation débouche presque toujours sur du travail à créer et à orchestrer. Conséquences :
+Un **ticket SPIKE présent dans le DAG** (recherche/investigation/cadrage — à NE PAS confondre avec le SPIKE de planification du plan lui-même, étape 4) n'est **jamais lancé en `/dev`**. Il est lancé en **`/plan`**, car une investigation débouche presque toujours sur du travail à créer et orchestrer. Conséquences :
 
-- **Un SPIKE lancé en `/plan` est un plan complet à part entière** : il fait sa propre analyse, peut **créer ses propres tickets** (sous la même EPIC / le même parapluie, ou un sous-parapluie qu'il crée), construire **son propre sous-DAG**, et **superviser son propre fan-out** (spawn `/dev` et/ou `/plan` enfants, await, réveils). Exactement comme le MODE MULTI-PLANS, mais déclenché par un SPIKE et non par un découpage de domaines.
-- **RÉCURSIVITÉ SUR N NIVEAUX** : un plan lance un SPIKE-plan, qui lance un SPIKE-plan, qui lance… Il n'y a pas de profondeur fixe. Chaque niveau est un orchestrateur pour son sous-arbre.
-- **REMONTÉE DE STATUT (chaque niveau → son parent)** : un SPIKE-plan reporte dans le `STATUS_DIR` de SON parent, via son identifiant de ticket, les états : `IN_PROGRESS` (analyse) → `PLANNED` (sous-tickets créés + son propre SPIKE de planif DONE) → `DONE` (**son sous-DAG entièrement drainé**) | `BLOCKED` (dont blocage sur réponse externe). Le parent traite `DONE` (pas `MERGED`) comme le signal de déblocage des dépendants d'un ticket SPIKE.
-- **CONSCIENCE GLOBALE DE L'ORCHESTRATEUR MAÎTRE** : le `/plan` racine reste **responsable de l'orchestration globale de tout l'arbre**. Il ne "perd" pas la main sur un sous-arbre : (1) il applique le **RESCAN DES ENFANTS DE L'UMBRELLA** à chaque réveil (les sous-plans créent des tickets → capter les orphelins) ; (2) il propage les `BLOCKED` d'un sous-niveau jusqu'à l'utilisateur ; (3) le chantier n'est `To Validate` que quand **tout l'arbre** (tous niveaux, tous tickets) est drainé. Chaque orchestrateur intermédiaire fait de même pour son sous-arbre et remonte l'agrégat.
-- **PROMPT de spawn d'un SPIKE** : donner l'EPIC/parapluie où pousser ses tickets, le périmètre de l'investigation, le `STATUS_DIR` + son identifiant pour reporter, et la consigne « **lance /plan** ; si tu découvres du travail, crée les tickets sous l'umbrella et orchestre-les ; reporte `PLANNED` puis `DONE`/`BLOCKED` ».
+- **Un SPIKE lancé en `/plan` est un plan complet** : sa propre analyse, peut **créer ses propres tickets** (sous la même EPIC / un sous-parapluie qu'il crée), construire **son sous-DAG**, **superviser son fan-out** (spawn `/dev` et/ou `/plan` enfants, await, réveils). Comme le MODE MULTI-PLANS, mais déclenché par un SPIKE.
+- **RÉCURSIVITÉ SUR N NIVEAUX** : un plan lance un SPIKE-plan, qui lance un SPIKE-plan… Pas de profondeur fixe. Chaque niveau orchestre son sous-arbre.
+- **REMONTÉE DE STATUT (chaque niveau → son parent)** : un SPIKE-plan reporte dans le `STATUS_DIR` de SON parent : `IN_PROGRESS` → `PLANNED` (sous-tickets créés + son SPIKE de planif DONE) → `DONE` (**son sous-DAG entièrement drainé**) | `BLOCKED`. Le parent traite `DONE` (pas `MERGED`) comme signal de déblocage des dépendants d'un SPIKE.
+- **CONSCIENCE GLOBALE DE L'ORCHESTRATEUR MAÎTRE** : le `/plan` racine reste **responsable de tout l'arbre** : (1) **RESCAN DES ENFANTS DE L'UMBRELLA** à chaque réveil ; (2) propage les `BLOCKED` d'un sous-niveau jusqu'à l'utilisateur ; (3) chantier `To Validate` seulement quand **tout l'arbre** est drainé. Chaque orchestrateur intermédiaire fait de même pour son sous-arbre.
+- **PROMPT de spawn d'un SPIKE** : donner l'EPIC/parapluie où pousser ses tickets, le périmètre de l'investigation, le `STATUS_DIR` + son identifiant, et la consigne « **lance /plan** ; si tu découvres du travail, crée les tickets sous l'umbrella et orchestre-les ; reporte `PLANNED` puis `DONE`/`BLOCKED` ».
 
-## DOSAGE DU MODÈLE DES SOUS-AGENTS — RÈGLE ABSOLUE (commune à `/plan` `/dev` `/hotfix`)
+## Rappels transverses (voir CLAUDE.md et skill `malt-workflow-commons`)
 
-Chaque fois que le thread principal crée un sous-agent (outil `Agent`, param `model`), il **DOIT dimensionner le model à la difficulté réelle de la tâche** — jamais sur-dimensionné (plus cher pour rien). **Ne concerne QUE les sous-agents `Agent`** (exploration/analyse) ; **PAS les surfaces CMUX** spawn (`cmux-tab.sh spawn` lance un Claude complet exécutant `/dev` ou `/plan` — model géré par CMUX, pas ici).
-
-| Model | Quand | Exemples `/plan` |
-|---|---|---|
-| **`haiku`** | Mécanique / déterministe, zéro raisonnement. | Grep, lister des fichiers, extraire un texte ADF, lookup `path:line` d'un symbole connu, lire un statut. |
-| **`sonnet`** | Standard : exploration/localisation de code, lecture multi-fichiers, sweep de conventions. | Localiser un domaine impacté ; cartographier des interfaces existantes ; recenser des tests jumeaux. |
-| **`opus`** | Fort raisonnement : cadrage architectural difficile, arbitrage de découpage non trivial, analyse de dépendances inter-domaines piégeuse. | Décomposition multi-plans complexe ; design d'un contrat partagé transverse. |
-
-**Défaut : commencer au model le PLUS BAS plausible**, remonter d'un cran seulement si la tâche l'exige. En cas de doute → le plus bas. **Jamais `opus` par réflexe** sur de l'exploration ou du mécanique.
-
-## VÉRIFICATION & BOUCLES DE CONTRÔLE — RÈGLE ABSOLUE (commune à `/plan` `/dev` `/hotfix`)
-
-Principe Anthropic : **donner à l'agent un moyen de vérifier son propre travail** (signal pass/fail sur lequel il itère seul). Adapté au `/plan` (qui produit un plan puis orchestre un DAG) :
-
-1. **Preuve, jamais affirmation.** Chaque fait structurant du plan cite une source réelle vérifiée cette session (`path:line`, requête Datadog, ticket JIRA) — jamais la mémoire (cf. VÉRIFICATION DES SOURCES CONTRE LE RÉEL, étape 5). Un « tous les tickets mergés » cite l'état JIRA + les `MERGED` du `STATUS_DIR`, pas une supposition.
-2. **`/goal` — ligne d'arrivée de drainage.** Le finish line du GO IMPLEMENTATION est mesurable : **DAG entièrement drainé** (toutes tâches `MERGED`, tous sous-plans `DONE`, zéro orphelin au RESCAN). Le tenir comme condition explicite : ne passer la User Story en `To Validate` que quand elle tient réellement.
-3. **Revue adverse du PLAN en contexte frais (completeness critic).** Avant le GATE « SPIKE → DONE » (étape 9), déléguer au subagent `reviewer` (`opus`) une **critique du plan** : ne voit que la User Story + les tâches + le DAG + les liens, et cherche les **manques** — domaine/tâche oublié, dépendance non posée, contrat partagé non tranché, tâche non réellement parallélisable. Retourne des GAPS ; les intégrer avant le GO. Ne pas sur-découper pour autant.
-4. **`/loop` — supervision auto-cadencée (option).** Pour superviser les `await` du DAG / des sous-plans, `/loop` est l'alternative auto-cadencée. **Ne remplace PAS** `await … EN BACKGROUND` + réveils ni `ScheduleWakeup` ; **l'outil `Monitor` reste INTERDIT**. Intervalle calé sur la vitesse réelle (un `/dev` met des dizaines de minutes → pas de poll à 60 s).
-5. **Explore → Plan.** C'est déjà le cœur du `/plan` (analyse déléguée aux sous-agents, étape 5) : comprendre avant de découper, sources vérifiées contre le réel.
-
-## Rappels transverses (voir CLAUDE.md)
-
-- **ORCHESTRATION PAR SOUS-AGENTS** : thread principal = orchestrateur ; déléguer exploration/analyse ; sous-agents retournent une CONCLUSION, pas des dumps. Sous-tâches indépendantes → plusieurs sous-agents dans le même message. **Dimensionner le model de chaque sous-agent** (haiku/sonnet/opus) selon la difficulté — cf. DOSAGE DU MODÈLE DES SOUS-AGENTS.
-- **VÉRIFICATION & BOUCLES** : preuve jamais affirmation ; `/goal` = drainage complet du DAG ; revue adverse du plan (sous-agent `opus`) avant le GATE SPIKE→DONE ; `/loop` option de supervision (jamais `Monitor`) — cf. section dédiée.
+- **ORCHESTRATION PAR SOUS-AGENTS** (CLAUDE.md) : thread principal = orchestrateur ; déléguer exploration/analyse ; sous-agents retournent une CONCLUSION, pas des dumps ; sous-tâches indépendantes → plusieurs sous-agents dans le même message ; **dimensionner le model** (§ DOSAGE DU MODÈLE, CLAUDE.md).
+- **VÉRIFICATION & BOUCLES** (skill commons) : preuve jamais affirmation ; `/goal` = drainage complet du DAG ; revue adverse du plan (subagent `reviewer` `opus`) avant le GATE SPIKE→DONE ; `/loop` option de supervision (jamais `Monitor`).
 - **SPIKE de recherche OBLIGATOIRE** : tout `/plan` (racine ou sous-plan) crée un ticket SPIKE pour SA propre recherche et le passe **DONE avant le GO IMPLEMENTATION**.
-- **SPIKE du DAG = `/plan`, jamais `/dev`** : un ticket SPIKE parallélisable se lance en `/plan` (sous-plan récursif) ; il peut créer + orchestrer ses propres tickets ; l'orchestrateur maître garde la conscience globale de l'arbre et rescanne les enfants de l'umbrella à chaque réveil.
-- **LANGUE** : titres/descriptions/liens JIRA en **ANGLAIS** ; seuls le champ `Prompt` (`customfield_11956`) / prompts de spawn en français.
-- **LABEL `Accounting/Bookkeeping` — RÈGLE ABSOLUE** : **TOUT** ticket créé par un `/plan` (EPIC, User Story parapluie, SPIKE de planif/décomposition, tâches, sous-plans) porte le label `Accounting/Bookkeeping` dès sa création (`"labels":["Accounting/Bookkeeping"]`).
-- **ASSIGNATION — RÈGLE ABSOLUE** : le plan ne s'assigne **AUCUN** ticket. Les tickets sont créés non assignés. L'assignation à `stephen.begot` est posée **uniquement au démarrage du dev** par le `/dev` correspondant (au passage `In Progress`).
+- **SPIKE du DAG = `/plan`, jamais `/dev`** : un ticket SPIKE parallélisable se lance en `/plan` (sous-plan récursif) ; l'orchestrateur maître garde la conscience globale de l'arbre et rescanne les enfants de l'umbrella à chaque réveil.
+- **LANGUE** (CLAUDE.md) : titres/descriptions/liens JIRA en **ANGLAIS** ; seuls le champ `Prompt` (`customfield_11956`) / prompts de spawn en français.
+- **LABEL `Accounting/Bookkeeping` — RÈGLE ABSOLUE** : **TOUT** ticket créé par un `/plan` (EPIC, User Story parapluie, SPIKE, tâches, sous-plans) porte le label dès sa création.
+- **ASSIGNATION — RÈGLE ABSOLUE** : le plan ne s'assigne **AUCUN** ticket. Assignation à `stephen.begot` posée **uniquement au démarrage du dev** par le `/dev` correspondant.
 - **cmux-tab** : résolution workspace via `$CMUX_SURFACE_ID` (piège : `identify --surface` cassé, suit le focus).
