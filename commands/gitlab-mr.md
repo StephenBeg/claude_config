@@ -2,7 +2,7 @@
 description: Review une Merge Request GitLab — lit le diff, analyse le code, poste des commentaires ciblés et donne un verdict global.
 ---
 
-Tu fais la review d'une MR GitLab via le MCP `gitlab` (serveur `glab mcp serve`).
+Tu fais la review d'une MR GitLab via **`glab` CLI (Bash)**. Le MCP GitLab est désactivé — n'utilise jamais d'outils `gitlab_*` / `glab_*`.
 
 ## Entrée
 
@@ -14,13 +14,13 @@ Si aucun argument : demande l'URL ou le numéro de la MR et le projet GitLab (`n
 
 ### 1. Récupération
 
-```
-gitlab_get_merge_request(project_id, merge_request_iid)
-gitlab_list_merge_request_diffs(project_id, merge_request_iid)
-gitlab_list_merge_request_notes(project_id, merge_request_iid)
+```bash
+glab mr view <iid> -R <namespace/repo> --output=json      # metadata + description
+glab mr diff <iid> -R <namespace/repo>                      # diff complet
+glab api "projects/:id/merge_requests/<iid>/notes?per_page=100" --paginate   # notes existantes
 ```
 
-Déduis `project_id` depuis l'URL (ex. `maltcommunity/malt` → URL-encodé si besoin) ou depuis le numéro passé.
+`-R <namespace/repo>` est optionnel si tu es déjà dans le repo. Déduis l'iid et le repo depuis l'URL passée.
 
 ### 2. Analyse du diff
 
@@ -35,13 +35,23 @@ Pour chaque fichier modifié, inspecte :
 
 Pour chaque finding significatif, poste un commentaire sur la ligne concernée :
 
-```
-gitlab_create_merge_request_note(
-  project_id,
-  merge_request_iid,
-  body: "<finding concis>\n\n```suggestion\n<correction optionnelle>\n```",
-  position: { ... }  # new_path, new_line
-)
+Commentaire inline (ancré à une ligne du diff) via l'API discussions — il faut les 3 SHA :
+
+```bash
+# récupérer base_sha / head_sha / start_sha
+glab mr view <iid> --output=json | grep -oP '"(base_sha|head_sha|start_sha)":\s*"\K[0-9a-f]{40}'
+
+glab api --method POST "projects/:id/merge_requests/<iid>/discussions" \
+  -H "Content-Type: application/json" --input - <<'JSON'
+{
+  "body": "<finding concis>\n\n```suggestion\n<correction optionnelle>\n```",
+  "position": {
+    "position_type": "text",
+    "base_sha": "<base>", "head_sha": "<head>", "start_sha": "<start>",
+    "new_path": "<path>", "new_line": <line>
+  }
+}
+JSON
 ```
 
 Format finding :
@@ -53,7 +63,7 @@ Ne poste pas de commentaire pour des détails stylistiques sans impact.
 
 ### 4. Commentaire général
 
-Poste un commentaire de synthèse sur la MR :
+Poste un commentaire de synthèse sur la MR via `glab mr note <iid> -m "<corps>"` :
 
 ```
 ## Review
@@ -80,4 +90,4 @@ Abandonne caveman pour les commentaires postés sur la MR — écrire normalemen
 - Ne merge, ne ferme, ne rebranch jamais sans confirmation explicite.
 - Ne modifie pas la description ni le titre de la MR sauf demande.
 - Si le diff est trop large (500+ lignes), préviens et propose de se concentrer sur un sous-ensemble de fichiers.
-- Si le MCP gitlab n'est pas disponible (glab non installé ou non auth), explique les étapes : `brew install glab` puis `glab auth login`.
+- Si `glab` n'est pas installé ou pas authentifié, explique les étapes : `brew install glab` puis `glab auth login`.

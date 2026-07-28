@@ -4,7 +4,7 @@ description: Interagit avec GitLab via glab CLI — auth, MRs, issues, pipelines
 
 # GitLab CLI Skill
 
-Interagis avec GitLab en utilisant `glab` CLI. Si le MCP GitLab est disponible (outils `gitlab_*`), utilise-le en priorité. Sinon, utilise les commandes `glab` directement.
+Interagis avec GitLab en utilisant **`glab` CLI via Bash uniquement**. Le MCP GitLab est désactivé (il injectait ~250 tools dans chaque requête → coût contexte énorme). N'utilise jamais d'outils `gitlab_*` / `glab_*` MCP ; toutes les opérations passent par des commandes `glab ...` exécutées dans Bash.
 
 ## Entrée
 

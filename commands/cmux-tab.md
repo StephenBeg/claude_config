@@ -92,6 +92,19 @@ STATUS_DIR=/tmp/claude_plan_<EPIC>_status   # créer le dossier + header TMP_IND
 - **`await` sort en code 3 si un ticket passe `BLOCKED`** → l'orchestrateur surface le blocage à l'utilisateur (onglet `[ASK]`) et NE spawn PAS les dépendants de ce ticket.
 - Le Claude de plan ne s'arrête **qu'après drainage du DAG** (ou blocage), en laissant sa surface ouverte (logs relisibles).
 
+### Parler à une surface DÉJÀ lancée (`send` brut)
+
+`spawn` crée une surface + lance claude. Pour **envoyer un message à un agent déjà en vol** (le relancer, lui donner une consigne, le débloquer), il n'y a pas de sous-commande dédiée : utiliser directement le binaire `cmux send` sur sa surface :
+
+```
+CLI="/Applications/cmux.app/Contents/Resources/bin/cmux"
+CMUX_QUIET=1 "$CLI" send --surface "surface:<N>" '<texte du message>\n'
+```
+
+- **PIÈGE VALIDATION** : `cmux send` traite `\n` / `\r` comme **séquence d'échappement** (les 2 caractères `backslash`+`n`) pour envoyer Entrée. Il faut donc passer la chaîne **littérale** `\n` (guillemets simples, ou `\\n` en double-guillemets) — **PAS** `$'\n'` (vrai octet newline), qui est inséré comme texte dans l'input sans valider. Sans le bon `\n`, le message remplit le champ mais **n'est jamais soumis**.
+- **Récupérer la ref surface** : `report` écrase le fichier `.status` à chaque transition et le detail `surface=surface:N` n'est présent QUE sur la ligne `SPAWNED`. Donc **noter le mapping ticket→surface au moment du spawn** (la valeur de retour de `spawn`), car il est perdu dès le premier `report` suivant. Alternative : `cmux surface list` (peut hang par intermittence sous charge, cf. PIÈGE workspace).
+- Usage : réveiller un agent idle, lui passer une consigne en cours de route, corriger sa trajectoire, le débloquer.
+
 ### Protocole de statut (enfant ↔ orchestrateur)
 
 Fichier `$STATUS_DIR/<TICKET>.status`, une ligne `STATE|timestamp|detail`, écriture atomique (rename). L'enfant (WORKFLOW DE DEV) appelle `report` à chaque transition :

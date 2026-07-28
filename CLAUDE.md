@@ -73,7 +73,7 @@ Points clés (détail dans `/plan`) :
 ## WORKFLOW DE DEV — commande `/dev`
 
 **Déclenché quand un ticket JIRA est fourni en entrée (par l'utilisateur ou par le Claude de plan via `spawn`).**
-→ **Invoquer la commande `/dev`** : elle contient le workflow complet (worktree, implémentation via sous-agents + tests, LLM-as-a-Judge, statuts JIRA, push + MR, `/end` avec vérif pipeline, suivi jusqu'au vert, report de statut en mode orchestré, titres d'onglet CMUX par phase, livrable final). Ne jamais merger la MR soi-même.
+→ **Invoquer la commande `/dev`** : elle contient le workflow complet (worktree, implémentation via sous-agents + tests, vérification avant livraison `/goal` borné + revue adverse en contexte frais, statuts JIRA, push + MR, `/end` avec vérif pipeline, suivi jusqu'au vert, report de statut en mode orchestré, titres d'onglet CMUX par phase, livrable final). Ne jamais merger la MR soi-même.
 ---
 
 ## ORCHESTRATION PAR SOUS-AGENTS — RÈGLE ABSOLUE
@@ -97,7 +97,25 @@ Points clés (détail dans `/plan`) :
 
 **Parallélisation :** sous-tâches indépendantes → lancer plusieurs sous-agents dans le même message (exécution concurrente).
 
+**Subagents réutilisables définis (`.claude/agents/`)** — les préférer aux `Agent` ad-hoc (model + tools déjà scopés) :
+- **`explorer`** (`sonnet`, read-only) : localiser/explorer du code, retourne `path:line` + pattern jumeau, jamais de dump.
+- **`reviewer`** (`opus`) : revue adverse d'un diff en contexte frais (cherche à réfuter ; retourne des GAPS correctness/scope).
+- **`smoke-runner`** (`haiku`) : `bootRun` d'un service + verdict `BOOTED_OK`/`BOOT_FAILED`.
+
+Le **DOSAGE DU MODÈLE** (haiku mécanique / sonnet standard / opus raisonnement) reste la règle pour tout `Agent` ad-hoc — cf. commandes `/dev` `/plan` `/hotfix`.
+
 **Exceptions — pas de sous-agent :** action triviale (1 fichier déjà connu, 1 commande), question conversationnelle directe. En cas de doute sur la longueur → déléguer.
+
+---
+
+## GESTION DU CONTEXTE — commandes natives
+
+Le contexte est la ressource rare (perf dégrade quand il sature). En complément de l'ORCHESTRATION (déléguer aux subagents) :
+
+- **`/clear` entre tâches non liées** : repartir propre plutôt que traîner un contexte pollué. Après **2 corrections ratées sur le même point** → `/clear` + reformuler un prompt plus précis (une session propre bat une longue session encombrée).
+- **Compaction** : quand un `/compact` (auto ou manuel) survient, **préserver impérativement** : la liste des **fichiers modifiés**, le **lien MR** + numéro, le **numéro de ticket JIRA** + statut courant, l'**état du `/goal`** en cours, et les décisions/tradeoffs pris. `/compact <instruction>` pour cibler.
+- **`/rewind` / checkpoints** : pour tenter une approche risquée — si elle échoue, rewind au lieu d'accumuler des tentatives ratées dans le contexte.
+- **Preuve, pas ré-exécution** : faire remonter par les subagents une CONCLUSION citant la sortie réelle (pas le dump), cf. VÉRIFICATION & BOUCLES des commandes.
 
 ---
 
@@ -153,12 +171,7 @@ Exemples :
 
 ## /end AVEC MR — VÉRIF PIPELINE (RÈGLE ABSOLUE)
 
-Quand `/end` est lancé **avec une MR en paramètre**, avant de clore :
-
-1. **Lookup pipeline** de la MR (`glab ci status` / `glab_mr_view` / `glab_ci_list` sur la branche de la MR) → vérifier qu'elle est **verte**.
-2. **Si rouge** : lire les logs du job en échec (`glab_ci_trace` / `glab_ci_artifact`), **diagnostiquer et fixer automatiquement**, commit + **repush** sur la branche de la MR (jamais master, cf. GIT WORKFLOW), puis re-vérifier la pipeline. Boucler jusqu'au vert.
-3. **Exception Sonar illisible** : si la pipeline casse à cause de **Sonar** et que le log est trop long / illisible pour en extraire les erreurs, **NE PAS deviner** → **demander à l'utilisateur de fournir les erreurs Sonar manuellement**, puis fixer sur cette base.
-4. Ne clore le `/end` (résumé + lien MR) qu'une fois la pipeline verte, ou après avoir explicitement demandé les erreurs Sonar à l'utilisateur.
+Quand `/end` est lancé **avec une MR** : vérifier la pipeline **verte** avant de clore ; si rouge, diagnostiquer + fixer + repush (jamais master) jusqu'au vert ; job Sonar → passer par `/sonar` (API), sinon demander les erreurs à l'utilisateur. **Attente : jamais `Monitor`** (boucle `until` en background ou `/loop`). **Détail complet et canonique dans la commande `/dev` (section « /end AVEC MR — VÉRIF PIPELINE » : child pipeline job-factory, `/sonar`, boucle `until`).**
 
 ---
 
@@ -167,7 +180,7 @@ Quand `/end` est lancé **avec une MR en paramètre**, avant de clore :
 **INTERDICTION ABSOLUE DE TOUCHER `master` — commit ET modification du working tree.**
 - **Jamais commit sur `master`.**
 - **Jamais modifier un seul fichier du working tree pendant que le repo principal est sur `master`** (pas d'`Edit`/`Write`, pas de `git checkout`/`stash` qui salit master). Une modif non commitée sur master est **aussi interdite** qu'un commit : elle peut colisionner avec / influencer les autres process (worktrees, sessions parallèles, builds) qui partagent ce checkout.
-- **AVANT toute édition de fichier** : vérifier `git branch --show-current`. Si `master` → **STOPPER**, créer d'abord le worktree (ci-dessous), éditer uniquement dedans.
+- **AVANT toute édition de fichier** : vérifier `git branch --show-current`. Si `master` → **STOPPER**, créer d'abord le worktree (ci-dessous), éditer uniquement dedans. *(Renforcé par un hook déterministe `master-guard` — PreToolUse Edit/Write bloque toute écriture dans `~/Documents/projects/malt` tant qu'il est sur master ; les worktrees passent.)*
 - Si des modifs traînent déjà sur master (erreur d'une session précédente) : les porter vers un worktree/branche, puis `git checkout -- .` pour rendre master vierge. Ne jamais construire dessus.
 
 **Ne jamais push directement sur `master`.** Toujours passer par branche + MR.
@@ -215,7 +228,7 @@ Ne pas utiliser l'outil `EnterWorktree` (crée le worktree dans `.claude/worktre
 - **`@stephen.begot` NE PEUT PAS self-approve** (le token GitLab est à son nom) → il ne posera jamais l'approbation native GitLab. Son feu vert de merge = un **commentaire dont le texte vaut "Approved"** sur la MR.
 - **Commentaires de `@stephen.begot` :** s'il commente la MR → en tenir compte (fixer + repush) ou répondre si c'est une question. Ne jamais ignorer. **Exception : un commentaire `Approved` = feu vert de merge** (cf. règle merge ci-dessous).
 - **Merge autorisé UNIQUEMENT si `@stephen.begot` a posté un commentaire `Approved` sur la MR.** Sans ce commentaire → **jamais merger soi-même**.
-- **Procédure de merge (après commentaire `Approved` ET pipeline verte) :** d'abord "rebase sans pipeline" via GitLab (`glab_mr_rebase`), puis merger (`glab_mr_merge`). Jamais l'un sans l'autre.
+- **Procédure de merge (après commentaire `Approved` ET pipeline verte) :** d'abord **rebase SANS pipeline** (`glab api --method PUT ".../rebase?skip_ci=true"` — un rebase nu relance la CI → boucle infinie sur master actif), puis **merger AVEC `--squash`** + `--remove-source-branch`. Jamais l'un sans l'autre, jamais sans `--squash`. (Détail + IID exact dans `/dev` step 13.)
 
 **Interdictions absolues :**
 - **Jamais MERGER la MR sans commentaire `Approved` de `@stephen.begot`.** (La création de MR est autorisée et requise, cf. WORKFLOW DE DEV étape 8.)
@@ -230,7 +243,7 @@ Description MR :
 <contenu généré par /gitlab-resume>
 ```
 
-Générer la description via le skill `/gitlab-resume` (structure Jira / App / Feature Flag / Comment). Ce bloc est non négociable, à chaque push.
+Générer la description via le skill `/gitlab-resume` (structure Jira / App / Feature Flag / Comment). Ce bloc est non négociable, à chaque push. *(Un hook `post-push-reminder` — PostToolUse Bash sur `git push` — réinjecte ce rappel automatiquement.)*
 
 ---
 
