@@ -32,7 +32,7 @@ Use exactly this structure:
 ````markdown
 ```markdown
 ### Jira
-<TICKET-ID — ticket title, or None>
+<[TICKET-ID](https://malt-community.atlassian.net/browse/TICKET-ID) — ticket title, or None>
 
 ### App to launch
 <app name(s)>
@@ -53,6 +53,7 @@ Use exactly this structure:
 - Always write in **English**.
 - **Description must be substantive**, not a single terse sentence: give the reviewer the context (why this change exists), the what (what it does), and the impact. Still no filler — every sentence carries information.
 - Use a `### Key changes` bullet list whenever the MR touches several files/layers or is non-trivial.
+- Jira links MUST use the base `https://malt-community.atlassian.net/browse/<TICKET-ID>` (NOT `malt.atlassian.net`, which is broken). Same base for the umbrella/parent link.
 - Do not invent ticket IDs or flag names — ask if unsure.
 - If multiple Jira tickets are involved, list them comma-separated.
 - If multiple apps need to be launched, list them comma-separated.

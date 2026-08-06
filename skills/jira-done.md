@@ -79,7 +79,7 @@ mcp__atlassian__transitionJiraIssue
 ### 6. Confirmer
 
 Affiche :
-- Ticket mis à jour : lien `https://malt.atlassian.net/browse/<TICKET-ID>`
+- Ticket mis à jour : lien `https://malt-community.atlassian.net/browse/<TICKET-ID>`
 - Statut → `<nouveau statut>`
 
 ## Erreurs fréquentes

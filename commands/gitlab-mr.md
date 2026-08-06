@@ -61,25 +61,38 @@ Format finding :
 
 Ne poste pas de commentaire pour des détails stylistiques sans impact.
 
-### 4. Commentaire général
+### 4. Feedback de synthèse — FORMAT OBLIGATOIRE
 
-Poste un commentaire de synthèse sur la MR via `glab mr note <iid> -m "<corps>"` :
+Le feedback (chat ET commentaire général posté via `glab mr note <iid> -m "<corps>"`) suit **toujours** cette structure, dans cet ordre :
+
+1. **Verdict binaire** : `✅ BONNE MR` ou `❌ MAUVAISE MR`. Un seul des deux, en tête, sans demi-mesure.
+2. **Tableau PROS / CONS** : un tableau à deux colonnes listant les points positifs et négatifs. Un côté peut être vide — on peut très bien avoir **que des PROS** ou **que des CONS**. Ne pas forcer d'équilibre artificiel. **Chaque CON doit être accompagné d'une suggestion de fix concrète** (comment le corriger) — pas seulement le constat du problème.
+3. **Cohérence conventions / architecture** : la MR respecte-t-elle les conventions et l'archi du repo ? Vérifier contre le code réel (patterns jumeaux, seeds/migrations existantes, modèles, contrats) — pas d'affirmation non vérifiée. Citer les `path:line` de référence.
+4. **Résumé descriptif général** : un paragraphe qui explique ce que fait la MR, la cause racine si c'est un fix, et pourquoi le verdict — le feedback narratif complet.
+
+Template :
 
 ```
 ## Review
 
-**Verdict** : ✅ Approuvé / ⚠️ Approuvé avec réserves / ❌ Changements requis
+## ✅ BONNE MR  (ou : ## ❌ MAUVAISE MR)
 
-**Résumé** : [2-3 phrases sur le contenu de la MR]
+| ✅ PROS | ❌ CONS (+ suggestion de fix) |
+|---|---|
+| <point positif> | <point négatif> — **fix :** <correction proposée> |
+| <point positif> | — |
 
-**Points bloquants** : [liste ou "aucun"]
+### Cohérence conventions / architecture
+<respect ou écart vs conventions du repo, avec path:line de référence vérifiés>
 
-**Points importants** : [liste ou "aucun"]
-
-**Suggestions** : [liste ou "aucun"]
-
-**Ce qui est bien** : [1-2 points positifs sincères]
+### Résumé
+<paragraphe descriptif : ce que fait la MR, cause racine si fix, justification du verdict>
 ```
+
+Règles :
+- Le tableau accepte un côté vide (que des PROS, ou que des CONS) — c'est explicitement autorisé.
+- Chaque affirmation de cohérence doit être **vérifiée contre le code réel** (déléguer l'exploration à un sous-agent si besoin), jamais supposée.
+- Les findings bloquants/importants détaillés vont en commentaires inline (section 3) ; le tableau PROS/CONS les résume.
 
 ### 5. Clarté automatique
 
