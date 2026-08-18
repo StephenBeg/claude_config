@@ -19,10 +19,15 @@ ST="python3 $HOME/.claude/scripts/wf-state.py"
 
 input=$(cat)
 # La commande et sa sortie, aplaties sur une ligne chacune (pattern-matching pur).
+#   Les CHAÎNES CITÉES sont neutralisées : un `git commit -m "... glab mr create
+#   ..."` ou un heredoc qui *parle* d'une commande ne doit rien déclencher
+#   (faux positif observé). Seul le code shell nu est analysé.
 cmd=$(printf '%s' "$input" | python3 -c '
-import sys, json
+import sys, json, re
 d = json.load(sys.stdin)
-print(((d.get("tool_input") or {}).get("command", "")).replace("\n", " "))
+c = ((d.get("tool_input") or {}).get("command", "")).replace("\n", " ")
+c = re.sub(r"\x27[^\x27]*\x27|\"[^\"]*\"", " Q ", c)   # vide le contenu des quotes
+print(c)
 ' 2>/dev/null) || cmd=""
 out=$(printf '%s' "$input" | python3 -c '
 import sys, json

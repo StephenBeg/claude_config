@@ -24,6 +24,11 @@ ck "worktree add -> IMPL" "IMPL" "$($ST get phase)"
 payload 'echo "on va faire git push puis glab mr merge"' 'ok' | "$S/wf-bash-hook.sh" >/dev/null
 ck "mention seule ignorée" "IMPL" "$($ST get phase)"
 
+# Prose citée dans un message de commit : ne doit RIEN déclencher (faux positif réel).
+payload 'git commit -q -m "feat: hook (glab mr create -> [MR (n)], git push -> [PIPE])"' 'ok' | "$S/wf-bash-hook.sh" >/dev/null
+ck "prose dans un commit ignorée" "" "$($ST get mr)"
+ck "prose dans un commit ne change pas la phase" "IMPL" "$($ST get phase)"
+
 payload 'glab mr create --fill' 'https://gitlab.com/x/-/merge_requests/31799' | "$S/wf-bash-hook.sh" >/dev/null
 ck "mr create -> IID mémorisé" "31799" "$($ST get mr)"
 ck "mr create -> phase MR" "MR" "$($ST get phase)"
