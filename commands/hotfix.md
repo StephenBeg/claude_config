@@ -1,5 +1,5 @@
 ---
-description: WORKFLOW DE HOTFIX — corriger un bug de bout en bout. Phase 1 DIAGNOSTIC (analyser le bug, trouver la cause racine, vérifier contre le réel). Phase 2 : créer soi-même le ticket bug (demander OÙ), puis implémenter de bout en bout (worktree → tests → MR au plus tôt → /end → suivi pipeline → statuts JIRA). Déclenché quand l'utilisateur signale un bug à corriger (pas de ticket en entrée).
+description: WORKFLOW DE HOTFIX — corriger un bug de bout en bout. Phase 1 DIAGNOSTIC (analyser le bug, trouver la cause racine, vérifier contre le réel). Phase 2 : créer soi-même le ticket bug (demander OÙ), puis implémenter de bout en bout (worktree → tests → MR au plus tôt → suivi pipeline → statuts JIRA → /end). Déclenché quand l'utilisateur signale un bug à corriger (pas de ticket en entrée).
 ---
 
 ## Input
@@ -18,19 +18,11 @@ La description du bug (symptôme observé, contexte, éventuel lien Datadog/Sent
 
 **TOUTES les étapes sont OBLIGATOIRES, dans l'ordre. Deux phases : DIAGNOSTIC puis IMPLÉMENTATION.**
 
-**HEADER CMUX — PROTOCOLE DE PHASE OBLIGATOIRE EN SOLO ET EN ORCHESTRÉ (RÈGLE ABSOLUE).** Le header et le suivi pipeline ne sont PAS réservés au mode orchestré : `/hotfix` étant presque toujours lancé en solo, la discipline s'applique intégralement. À **chaque** transition, exécuter immédiatement `~/.claude/scripts/cmux-tab.sh phase <PREFIX> "<résumé>"` :
+**HEADER CMUX — PROTOCOLE DE PHASE OBLIGATOIRE EN SOLO ET EN ORCHESTRÉ (RÈGLE ABSOLUE).** Le header et le suivi pipeline ne sont PAS réservés au mode orchestré : `/hotfix` étant presque toujours lancé en solo, la discipline s'applique intégralement.
 
-| Phase hotfix | Préfixe |
-|---|---|
-| Diagnostic (Phase 1) | `PLAN` |
-| Cause racine à arbitrer / question (step 5-6) | `ASK` |
-| Correctif + push MR au plus tôt (step 7a) | `IMPL` puis `MR` (numéro : `[MR (1234)]`) |
-| Vérif locale lourde en parallèle (step 7b) | `IMPL` / `PIPE` selon repush |
-| Attente approval (step 7c) | `MR (<numMR>)` |
-| Clean worktree | `CLEAN` |
-| Fin (MR mergée + `/end`) | `END` |
+Poser le sujet **une fois** (`cmux-tab.sh topic "<le bug réel, 3-4 mots>"`, persistant), puis le préfixe **nu** à chaque transition : `PLAN` (diagnostic) → `ASK` (cause racine à arbitrer) → `IMPL` (correctif) → `MR (n)` (attente approval) → `PIPE (n)` (repush) → `CLEAN` → `END`. Les crochets sont posés par le script, qui refuse un préfixe inconnu. `[MR (n)]`, `[PIPE (n)]`, `[IMPL]` et `[CLEAN]` sont posés **automatiquement par les hooks** au `glab mr create` / `git push` / `git worktree add` / `glab mr merge` ; la sortie de `[ASK]` est automatique dès que l'utilisateur répond.
 
-Sémantique, retours arrière et table unifiée : skill commons **§ PRÉFIXES DE HEADER CMUX** (source de vérité). Le résumé décrit CE QU'ON FAIT (le bug réel), jamais "diag ticket X". **Suivi pipeline (`malt-pipeline-followup`) + lecture des notes / attente `Approved` (step 7c) = dus en solo aussi**, jamais « lâchés » faute d'orchestrateur qui attend.
+Sémantique, retours arrière, automatismes et table unifiée : skill commons **§ PRÉFIXES DE HEADER CMUX** (source de vérité). Le résumé décrit CE QU'ON FAIT (le bug réel), jamais "diag ticket X". **Suivi pipeline (`malt-pipeline-followup`) + lecture des notes / attente `Approved` (step 7c) = dus en solo aussi**, jamais « lâchés » faute d'orchestrateur qui attend.
 
 ---
 
@@ -72,10 +64,11 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
    - **Si une vérif locale échoue** (test, build, smoke-run, judge, Sonar) → fixer, commit + **repush sur la branche de la MR** (jamais master), la pipeline se relance. Onglet `[IMPL]`/`[PIPE (<numMR>)]`.
 
    **7c — CLÔTURE :**
-   - `/end` (avec vérif pipeline — skill `malt-pipeline-followup`, invoqué via skill commons § /end AVEC MR), suivi MR jusqu'au vert, statut JIRA → "Review".
+   - Suivi MR jusqu'au vert (skill `malt-pipeline-followup`), statut JIRA → "Review". **Le `/end` vient EN DERNIER** (après merge, cf. fin de 7c) — pas ici : lancé avant la pipeline et le merge, il est systématiquement reporté puis oublié.
    - Attente `Approved` (hors suivi pipeline lui-même, déjà couvert par `malt-pipeline-followup`) : boucle `until` en background ou `/loop` (skill commons § VÉRIFICATION & BOUCLES levier 4 ; **`Monitor` interdit**). **HEURES CALMES 20h–7h (CLAUDE.md) : aucun suivi/poll/réveil programmé → STOPPER NET, consigner l'état, relance manuelle le matin.**
    - Lecture des commentaires `@stephen.begot` (jamais par supposition — fetch les notes). **Request changes** : tant que pas de `Approved`, ses commentaires = demandes → fixer (`[IMPL]`/`[PIPE (<numMR>)]`) ou répondre, puis **LUI REDEMANDER un `Approved`**. Merge UNIQUEMENT après commentaire `Approved` **postérieur au dernier repush** + pipeline verte (GIT WORKFLOW : rebase `skip_ci=true` puis merge `--squash`).
-   - Statut JIRA → "To Validate". **Livrable final** = tableau du skill commons § LIVRABLE FINAL.
+   - Statut JIRA → "To Validate", puis **`/end` (OBLIGATOIRE, une seule fois, ICI)** — skill `end` + commons § /end AVEC MR : log du jour avec lien MR + lien JIRA, tradeoffs en commentaire JIRA **en anglais**. Puis clean du worktree et header `[END]`. **La fin de tour est BLOQUÉE par un hook tant que le `/end` d'une MR mergée n'est pas écrit dans le log du jour** (vérifié dans le fichier, pas sur déclaration).
+   - **Livrable final** = tableau du skill commons § LIVRABLE FINAL.
 
 ## URGENCE — un hotfix reste borné (RÈGLE ABSOLUE)
 

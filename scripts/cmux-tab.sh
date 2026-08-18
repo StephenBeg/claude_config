@@ -3,7 +3,13 @@
 #
 # Usage:
 #   cmux-tab.sh set   "<titre>"          # renomme le tab courant
-#   cmux-tab.sh phase "[PLAN]" "<3-4 mots>"  # prefixe + résumé ([PLAN]|[IMPL]|[MR]|[END]|[ASK])
+#   cmux-tab.sh phase PLAN "<3-4 mots>" # préfixe + résumé. Les CROCHETS sont posés
+#                                        # par le script ; un préfixe hors liste est REFUSÉ.
+#                                        # MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END
+#   cmux-tab.sh topic "<3-4 mots>"       # (re)pose le résumé seul ; il survit aux phases
+#   cmux-tab.sh mr <IID>                 # mémorise la MR -> header "[MR (1234)] …" automatique
+#   cmux-tab.sh sync                     # recale le header sur le RÉEL (branche + MR ouverte)
+#   cmux-tab.sh state [show|get|set …]   # état de workflow persistant (cf. wf-state.py)
 #   cmux-tab.sh get                      # affiche le ref de surface courant
 #   cmux-tab.sh spawn "<prompt>" ["<titre>"] ["<cwd>"]
 #                                        # nouvel onglet -> claude (opus 5) + prompt
@@ -208,6 +214,30 @@ wake_surface() {
   return 1
 }
 
+# ---------------------------------------------------------------------------
+# ÉTAT DE WORKFLOW (wf-state.py) — le header n'est plus DÉCLARÉ, il est RENDU
+# depuis un état persistant partagé avec les hooks. Corrige trois défauts
+# observés : préfixe sans crochets ("PLAN x" au lieu de "[PLAN] x"), numéro de MR
+# jamais présent, header périmé après compaction (l'état survit au contexte).
+WF_STATE="$HOME/.claude/scripts/wf-state.py"
+
+# Applique le titre rendu par l'état courant sur l'onglet.
+render_from_state() {
+  local t; t="$(python3 "$WF_STATE" title)"
+  [[ -n "$t" ]] || return 0
+  # Un renommage impossible (surface absente, cmux fermé) ne doit JAMAIS faire
+  # échouer la mise à jour d'état : l'état reste la source de vérité.
+  rename_own_tab "$t" || true
+  printf '%s\n' "$t"
+}
+
+# Résout l'IID de la MR de la branche courante (best-effort, silencieux).
+resolve_mr_iid() {
+  local br; br="$(git branch --show-current 2>/dev/null)" || return 1
+  [[ -n "$br" && "$br" != "master" ]] || return 1
+  glab mr list --source-branch "$br" 2>/dev/null | grep -oE '^!?[0-9]+' | tr -d '!' | head -1
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -220,9 +250,39 @@ case "$cmd" in
     rename_own_tab "$title"
     ;;
   phase)
-    prefix="${1:?prefix requis (MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END)}"
-    summary="${2:?résumé requis}"
-    rename_own_tab "$prefix $summary"
+    # phase <PREFIX> ["<résumé>"] — les crochets sont posés par le SCRIPT.
+    # Tolère les formes historiques : "[MR (1234)]", "[PLAN]", "mr".
+    raw="${1:?prefix requis (MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END)}"
+    summary="${2:-}"
+    mrnum="$(printf '%s' "$raw" | grep -oE '[0-9]+' | head -1 || true)"
+    prefix="$(printf '%s' "$raw" | tr -cd '[:alpha:]' | tr '[:lower:]' '[:upper:]')"
+    [[ -n "$mrnum" ]] && python3 "$WF_STATE" set "mr=$mrnum"
+    python3 "$WF_STATE" phase "$prefix" ${summary:+"$summary"} >/dev/null
+    render_from_state
+    ;;
+  topic)
+    # topic "<résumé>" — le sujet est posé UNE FOIS et survit aux phases.
+    python3 "$WF_STATE" set "topic=${1:?résumé requis}"
+    render_from_state
+    ;;
+  mr)
+    # mr <IID> — mémorise le numéro de MR (le header le porte ensuite tout seul).
+    python3 "$WF_STATE" set "mr=${1:?IID requis}"
+    render_from_state
+    ;;
+  sync)
+    # sync — recale le header sur le RÉEL (branche + MR ouverte), sans rien
+    # demander au LLM. Idempotent, best-effort, jamais fatal.
+    br="$(git branch --show-current 2>/dev/null || true)"
+    [[ -n "$br" && "$br" != "master" ]] && python3 "$WF_STATE" set "branch=$br"
+    if [[ -z "$(python3 "$WF_STATE" get mr)" ]]; then
+      iid="$(resolve_mr_iid || true)"
+      [[ -n "$iid" ]] && python3 "$WF_STATE" set "mr=$iid"
+    fi
+    render_from_state
+    ;;
+  state)
+    python3 "$WF_STATE" "${1:-show}" "${@:2}"
     ;;
   spawn)
     prompt="${1:?prompt requis}"
@@ -469,7 +529,7 @@ case "$cmd" in
     ;;
 
   *)
-    echo "Usage: cmux-tab.sh set \"<titre>\" | phase <PREFIX> \"<résumé>\" | get | spawn \"<prompt>\" [titre] [cwd] | wake [--force] <surface> \"<message>\" | report [--notify <surface>] <dir> <ticket> <STATE> [detail] | await <dir> [--timeout s] [--interval s] [--terminal MERGED|PLANNED] <ticket...> | status <dir> [ticket] | pair-init <inbox_file> (header sur STDIN) | note <inbox_file> <LABEL> <EVENT> [detail] | await-note --match <regex> [--timeout s] [--interval s] <inbox_file...>" >&2
+    echo "Usage: cmux-tab.sh set \"<titre>\" | phase <PREFIX> \"<résumé>\" | topic \"<résumé>\" | mr <IID> | sync | state [show|get|set …] | get | spawn \"<prompt>\" [titre] [cwd] | wake [--force] <surface> \"<message>\" | report [--notify <surface>] <dir> <ticket> <STATE> [detail] | await <dir> [--timeout s] [--interval s] [--terminal MERGED|PLANNED] <ticket...> | status <dir> [ticket] | pair-init <inbox_file> (header sur STDIN) | note <inbox_file> <LABEL> <EVENT> [detail] | await-note --match <regex> [--timeout s] [--interval s] <inbox_file...>" >&2
     exit 2
     ;;
 esac

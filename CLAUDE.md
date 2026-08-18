@@ -32,6 +32,15 @@ Déterminer lequel s'applique **avant toute action** — signal : présence d'un
 - **`/dev`** — un ticket JIRA fourni à implémenter de bout en bout (worktree → tests → MR → suivi pipeline → statuts). Header CMUX + suivi pipeline **dus en solo comme en orchestré**. Détail dans `/dev`. Ne jamais merger la MR soi-même.
 - **`/hotfix`** — bug signalé sans ticket : diagnostic → cause racine → crée son ticket → implémente. Détail dans `/hotfix`.
 
+## ÉTAT DE WORKFLOW — HEADER, MR, /end SONT OUTILLÉS (pas déclaratifs)
+
+Le header CMUX, le numéro de MR et le `/end` ne dépendent plus de la mémoire du LLM : ils vivent dans un **état persistant par surface** (`~/claude-exchange-llm/_phase/<surface>.json`, écrit par `~/.claude/scripts/cmux-tab.sh`) piloté par des **hooks déterministes**.
+
+- **Poser le sujet une fois** : `cmux-tab.sh topic "<3-4 mots>"` — il survit aux phases ET à la compaction. Puis `cmux-tab.sh phase <PREFIX>` avec le préfixe **NU** (le script pose les crochets et refuse un préfixe hors liste).
+- **Automatique, ne pas le refaire à la main** : `glab mr create` → `[MR (n)]` + numéro mémorisé · `git push` → `[PIPE (n)]` + bloc de clôture · `git worktree add` → `[IMPL]` · `glab mr merge` → `[CLEAN]` · **réponse de l'utilisateur → sortie automatique de `[ASK]`/`[BLOCK]`/`[WAIT]`**.
+- **`/end` non sautable** : la fin de tour est **bloquée** tant qu'une MR mergée n'a pas son `/end` écrit dans le log du jour (vérifié dans le fichier, jamais sur déclaration). Le `/end` se fait **en dernier**, après merge — jamais avant la pipeline.
+- Reste à la charge de la session : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WAIT]`, `[END]`, le sujet, et les retours arrière métier (`[MR]`→`[IMPL]` sur request changes). Détail : skill `malt-workflow-commons` § PRÉFIXES DE HEADER CMUX.
+
 ## COUVERTURE DE CODE — RÈGLE ABSOLUE
 
 **Toute ligne ajoutée ou modifiée DOIT être couverte par un test.** Aucun code de prod livré sans test exerçant les lignes touchées.
@@ -61,7 +70,7 @@ Vérifier avant tout travail (`git status` = "On branch TICKET…, nothing to co
 
 **Interdictions :** jamais co-author dans les commits (aucun `Co-Authored-By`) · jamais lancer les linters à la main (hook husky les exécute au `git commit` — committer et lire le résultat).
 
-**APRÈS TOUT PUSH — bloc de clôture obligatoire** (réinjecté par le hook `post-push-reminder`) :
+**APRÈS TOUT PUSH — bloc de clôture obligatoire** (réinjecté par le hook `wf-bash-hook`, qui pose aussi le header `[PIPE (n)]`) :
 ```
 Travail poussé sur : <branche>
 Description MR :

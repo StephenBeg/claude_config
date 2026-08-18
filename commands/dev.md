@@ -1,5 +1,5 @@
 ---
-description: WORKFLOW DE DEV — implémenter un ticket JIRA de bout en bout (worktree → tests → MR → /end → suivi pipeline → statuts JIRA). Déclenché quand un ticket JIRA est fourni en entrée.
+description: WORKFLOW DE DEV — implémenter un ticket JIRA de bout en bout (worktree → tests → MR → suivi pipeline → statuts JIRA → /end). Déclenché quand un ticket JIRA est fourni en entrée.
 ---
 
 ## Input
@@ -27,19 +27,13 @@ Si le header de MON inbox (lu via le lien du spawn) contient `[ORCHESTRATION]` a
 
 ### PROTOCOLE DE PHASE — OBLIGATOIRE EN SOLO **ET** EN ORCHESTRÉ (RÈGLE ABSOLUE)
 
-**Le header CMUX et le suivi de pipeline ne sont PAS réservés au mode orchestré.** En solo (lancé par l'utilisateur, sans header `[ORCHESTRATION]`), la même discipline s'applique intégralement — c'est le défaut historique de sous-application quand aucun orchestrateur n'attend. À **chaque** transition d'étape ci-dessous, exécuter la commande de header correspondante **immédiatement**, sans exception :
+**Le header CMUX et le suivi de pipeline ne sont PAS réservés au mode orchestré.** En solo (lancé par l'utilisateur, sans header `[ORCHESTRATION]`), la même discipline s'applique intégralement — c'est le défaut historique de sous-application quand aucun orchestrateur n'attend.
 
-| Étape | Commande à exécuter |
-|---|---|
-| Lecture ticket / étude (step 1) | `~/.claude/scripts/cmux-tab.sh phase PLAN "<résumé>"` |
-| GATE liste de tests (step 3b) | `~/.claude/scripts/cmux-tab.sh phase ASK "<résumé>"` |
-| Implémentation code+tests (step 3c) | `~/.claude/scripts/cmux-tab.sh phase IMPL "<résumé>"` |
-| MR créée, attente approval (step 8) | `~/.claude/scripts/cmux-tab.sh phase MR "<résumé>"` (numéro MR : `[MR (1234)]`) |
-| Suivi pipeline verte (step 10) | `~/.claude/scripts/cmux-tab.sh phase PIPE "<résumé>"` (numéro MR : `[PIPE (1234)]`) |
-| Clean worktree | `~/.claude/scripts/cmux-tab.sh phase CLEAN "<résumé>"` |
-| Fin (MR mergée + `/end`) | `~/.claude/scripts/cmux-tab.sh phase END "<résumé>"` |
-
-Détails, retours arrière et sémantique des préfixes : skill `malt-workflow-commons` **§ PRÉFIXES DE HEADER CMUX** (table unifiée, source de vérité). Le header peut revenir en arrière (`[MR]`→`[PIPE]`→`[MR]`). Le résumé décrit CE QU'ON FAIT (jamais "impl du ticket X"), identique entre phases.
+**Poser le sujet UNE FOIS au démarrage**, il est persistant ensuite (survit aux phases et à la compaction) :
+```
+~/.claude/scripts/cmux-tab.sh topic "<3-4 mots sur CE QU'ON FAIT>"   # ex : "TRY PAR EVENTID"
+```
+Puis, à chaque transition, `cmux-tab.sh phase <PREFIX>` — **préfixe nu**, le script pose les crochets et refuse un préfixe inconnu. `[MR (n)]`, `[PIPE (n)]`, `[IMPL]` (worktree) et `[CLEAN]` (merge) sont posés **automatiquement par les hooks** ; restent à ta charge `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WAIT]`, `[END]` et les retours arrière métier. Sémantique complète, règles et automatismes : skill `malt-workflow-commons` **§ PRÉFIXES DE HEADER CMUX** (source de vérité unique — ne pas la recopier ici).
 
 **SUIVI PIPELINE + ATTENTE `Approved` = OBLIGATOIRES EN SOLO AUSSI.** Les steps 10 (skill `malt-pipeline-followup`) et 12 (lecture des notes / attente `Approved`) s'exécutent que le `/dev` soit orchestré ou non. Ne jamais « lâcher » le suivi parce que personne n'attend un `report` : la boucle de vérification (pipeline verte citée, commentaire `Approved` lu et non supposé) est due dans tous les cas.
 
@@ -86,9 +80,9 @@ En solo : cet additif est sans objet (seul le `SURFACE_FILE` du loop juge existe
    - Règles actives + seuils du gate : note Obsidian `[[SonarQube Malt - Règles actives]]` (`/obsidian` recherche). Réutiliser cette pré-analyse plutôt que deviner.
    - Points de contrôle sur le diff : **Coverage new code ≥ 80 %** (chaque ligne main ajoutée/modifiée exercée par un test — recouvre COUVERTURE DE CODE) ; **0 violation new code** (littéraux dupliqués S1192, `when` > 30 branches S1479, params > 7 S107, duplication, etc.).
    - Ne pousser qu'une fois cette relecture passée. La vérif pipeline du `/end` (skill commons § /end AVEC MR) reste le filet de sécurité, pas le premier rempart.
-8. **Push + MR** — pusher la branche puis **créer la MR** avec description respectant `/gitlab-resume`. **TITRE DE MR (GIT WORKFLOW)** : `[<TICKET>] Titre` (ex `[BILL-2854] Fix invoice rounding`), en anglais ; si aucun ticket → `[devscoot]`. Le subject du 1er commit suit ce format (il préremplit le titre de MR). **Mettre `@stephen.begot` en reviewer** (obligatoire), + labels de squad (skill `malt-squad-conventions`). → onglet `[MR (<numMR>)] <résumé>`. *(Mode orchestré : `report … MR_OPEN "<lien MR>"`.)*
-9. **`/end`** — lancer le `/end` soi-même (skill `end`, avec vérif pipeline si MR — skill commons **§ /end AVEC MR**). → onglet `[END] <résumé>` une fois MR mergée + `/end` fait.
-10. **Suivi MR jusqu'au vert** — → onglet `[PIPE (<numMR>)] <résumé>` tant que la pipeline n'est pas verte. **Invoquer le skill `malt-pipeline-followup`** (source de vérité unique : lookup statut, pipelines parent-child, diagnostic + fix + repush, Sonar, conflits de rebase, boucle d'attente, heures calmes) et le suivre jusqu'à pipeline verte citée. Pipeline verte + MR en attente d'approval → revenir à `[MR (<numMR>)]`.
+8. **Push + MR** — pusher la branche puis **créer la MR** avec description respectant `/gitlab-resume`. **TITRE DE MR (GIT WORKFLOW)** : `[<TICKET>] Titre` (ex `[BILL-2854] Fix invoice rounding`), en anglais ; si aucun ticket → `[devscoot]`. Le subject du 1er commit suit ce format (il préremplit le titre de MR). **Mettre `@stephen.begot` en reviewer** (obligatoire), + labels de squad (skill `malt-squad-conventions`). Le header `[MR (<numMR>)]` est posé automatiquement par le hook. *(Mode orchestré : `report … MR_OPEN "<lien MR>"`.)*
+9. **~~`/end`~~ → déplacé en step 15.** *(Le `/end` était historiquement ici, avant la pipeline et avant le merge : il devait « vérifier la pipeline » qui n'existait pas encore, était reporté, puis jamais refait. C'est la cause structurelle des `/end` manquants. Ne PAS le lancer ici. Numérotation conservée : les steps 10-16 sont référencés ailleurs.)*
+10. **Suivi MR jusqu'au vert** — onglet `[PIPE (<numMR>)]` tant que la pipeline n'est pas verte. **Invoquer le skill `malt-pipeline-followup`** (source de vérité unique : lookup statut, pipelines parent-child, diagnostic + fix + repush, Sonar, conflits de rebase, boucle d'attente, heures calmes) et le suivre jusqu'à pipeline verte citée. Pipeline verte + MR en attente d'approval → revenir à `[MR (<numMR>)]`.
 11. **Statut JIRA → "Review"** (skill `/jira`).
 12. **Commentaires de `@stephen.begot` — LECTURE OBLIGATOIRE, JAMAIS PAR SUPPOSITION.** Avant toute attente ou tout `[WAIT]`, **fetch explicitement les notes de la MR** :
     ```
@@ -110,7 +104,8 @@ En solo : cet additif est sans objet (seul le `SURFACE_FILE` du loop juge existe
        ```
     Ne jamais merger sans `--squash`. Ne jamais merger sans le commentaire `Approved`.
 14. **Après merge → Statut JIRA "To Validate"** (skill `/jira`). *(Mode orchestré : `report … MERGED "<lien MR>"` — c'est CE report qui débloque les dépendants. Ne pas l'oublier.)*
-15. **Livrable final** — retourner le tableau du skill commons **§ LIVRABLE FINAL** (JIRA / Statut / MR / `/end` / Obsidian / Tradeoffs / Résumé). Le point **Tradeoffs** est OBLIGATOIRE. *(Mode orchestré : poser la checklist `DONE` dans `$OIN` (inbox orchestrateur) — skill `malt-surface-exchange` § CHECKLIST DONE FINALE — prouvant pipeline verte citée, conflits résolus, `/end` complet, verdict juge `OK`.)*
+15. **`/end` — OBLIGATOIRE, une seule fois, ICI** (skill `end`, avec vérif pipeline — skill commons **§ /end AVEC MR**) : log du jour avec lien MR + lien JIRA + umbrella, et tradeoffs postés en commentaire JIRA **en anglais**. Puis clean du worktree (`git worktree remove`) et header `[END]`. **La fin de tour est BLOQUÉE par un hook tant que le `/end` d'une MR mergée n'est pas écrit dans le log du jour** — il est vérifié dans le fichier, pas sur déclaration.
+16. **Livrable final** — retourner le tableau du skill commons **§ LIVRABLE FINAL** (JIRA / Statut / MR / `/end` / Obsidian / Tradeoffs / Résumé). Le point **Tradeoffs** est OBLIGATOIRE. *(Mode orchestré : poser la checklist `DONE` dans `$OIN` (inbox orchestrateur) — skill `malt-surface-exchange` § CHECKLIST DONE FINALE — prouvant pipeline verte citée, conflits résolus, `/end` complet, verdict juge `OK`.)*
 
 **TRAVAIL DÉCOUVERT EN COURS DE ROUTE** — si ce `/dev` découvre du travail annexe : suivre le skill commons **§ TRAVAIL DÉCOUVERT** (créer un ticket dédié sous le parapluie, ne pas élargir son scope en douce, signaler à l'orchestrateur, ne pas l'orchestrer soi-même).
 

@@ -64,8 +64,22 @@ curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" "$ATLASSIAN_SITE/rest/api/3/m
 Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilisateur ; cible via `CMUX_SURFACE_ID`) **dès qu'un changement d'état survient** :
 
 ```
-~/.claude/scripts/cmux-tab.sh phase <PREFIX> "<résumé 3-4 mots>"
+~/.claude/scripts/cmux-tab.sh phase <PREFIX> "<résumé 3-4 mots>"   # crochets posés par le SCRIPT
+~/.claude/scripts/cmux-tab.sh topic "<résumé>"                     # (re)pose le sujet seul
+~/.claude/scripts/cmux-tab.sh sync                                 # recale sur le réel (branche + MR)
 ```
+
+**Écrire le préfixe NU** (`phase MR "…"`, pas `phase "[MR (1234)]"`) : le script pose les crochets, valide le préfixe contre la liste (un préfixe inconnu est **refusé**) et injecte le numéro de MR tout seul dès qu'il est connu. Le résumé (`topic`) est **persistant** : il survit aux changements de phase ET à la compaction — inutile de le redonner à chaque `phase`.
+
+**CE QUI EST AUTOMATIQUE (hooks — ne pas le refaire à la main).** L'état de workflow vit dans `~/claude-exchange-llm/_phase/<surface>.json` et des hooks déterministes le pilotent :
+- `glab mr create` → numéro de MR mémorisé + header `[MR (n)]` posé **automatiquement**.
+- `git push` → `[PIPE (n)]` + rappel du bloc de clôture.
+- `git worktree add` → `[IMPL]`.
+- `glab mr merge` → `merged`, `[CLEAN]`, rappel des 3 obligations restantes.
+- **Réponse de l'utilisateur** → sortie automatique de `[ASK]`/`[BLOCK]`/`[WAIT]` vers la phase précédente. (Ne jamais laisser un `[ASK]` traîner : si la phase de retour n'est pas la bonne, en poser une explicitement.)
+- **Fin de tour** → **BLOQUÉE** tant qu'une MR mergée n'a pas son `/end` écrit dans le log du jour (vérifié dans le fichier, pas déclaré).
+
+Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WAIT]`, `[END]`, le `topic`, et tout retour arrière métier (`[MR]` → `[IMPL]` sur request changes).
 
 | Préfixe | Signification |
 |---|---|
@@ -82,6 +96,7 @@ Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilis
 
 **Règles :**
 - La session **DOIT** mettre à jour le header **dès qu'elle fait quelque chose** — jamais laisser un header périmé.
+- `[END]` ne se pose qu'**après** le `/end` réellement écrit (le hook de fin de tour le vérifie dans le log du jour).
 - Le header peut **revenir en arrière** : ex `[MR (1234)]` → `[PIPE (1234)]` (fix demandé qui relance la pipeline) → `[MR (1234)]` ; ou `[MR (1234)]` → `[IMPL]` (request changes) → `[PIPE (1234)]` → `[MR (1234)]`.
 - **Le résumé décrit CE QU'ON FAIT — jamais "impl du ticket X".** 3-4 mots sur le contenu réel, pas le mot "impl" ni le numéro de ticket seul. Le résumé reste **identique** entre phases ; seul le préfixe change.
   - ❌ `[IMPL] BILL-2607 impl`
