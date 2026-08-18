@@ -7,7 +7,7 @@ description: Règles communes aux workflows /dev /plan /hotfix (source de vérit
 
 Bloc de règles **partagées** par les trois workflows. Source de vérité UNIQUE : ne jamais recopier ces sections dans une commande — la commande invoque ce skill et renvoie à la section par son nom. Chaque commande **invoque ce skill en premier**, puis suit ses étapes propres.
 
-Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser qu'un sous-ensemble (ex : `/plan` n'a ni smoke-run ni MR ; `/plan` est le seul à porter `[MAIN]` en continu).
+Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser qu'un sous-ensemble (ex : `/plan` n'a ni smoke-run ni MR ; `/orchestrator` est le seul à porter `[MAIN]` en continu — `/plan` planifie puis passe le relais et ne supervise rien).
 
 ---
 
@@ -15,7 +15,11 @@ Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser 
 
 Quand un workflow pose une question à l'utilisateur **avec des choix de réponses** (options prédéfinies, arbitrage, `AskUserQuestion`) :
 
-- **Explication détaillée AVANT les choix — obligatoire.** Avant de présenter les options, exposer le problème **point par point** : contexte, ce qui est en jeu, pourquoi la décision se pose, et pour **chaque option** ses implications / tradeoffs. But : que l'utilisateur comprenne réellement l'issue et les solutions, pas qu'il tranche à l'aveugle.
+- **FORMULATION MÉTIER, SIMPLE, SANS CODE — RÈGLE ABSOLUE.** L'utilisateur ne lit **pas** le code et ne veut **aucun** détail technique dans la question. **Interdits dans l'énoncé ET dans les libellés/descriptions d'options** : noms de variables/fonctions/classes/fichiers, `path:line`, noms de tables/colonnes, termes d'archi bruts (port/adapter, event vs appel, DTO, endpoint, migration…), extraits de code. **Traduire chaque option en IMPACT CONCRET OBSERVABLE** : ce que ça change pour l'utilisateur final / le comportement du produit / les données visibles / le délai / la réversibilité. Si un choix technique n'a pas d'impact métier explicable simplement, c'est probablement un choix non différenciant que Claude tranche seul (cf. § DÉCISIONS D'ARCHI) — ne pas le poser.
+  - ❌ « Faut-il router via `SyncCommandBus` ou appeler `NetsuiteRecordPusher` en direct ? »
+  - ✅ « Quand un paiement arrive, on l'enregistre tout de suite au risque de rares doublons, ou on attend une confirmation (plus lent mais zéro doublon) ? »
+- **Explication AVANT les choix — obligatoire, en langage clair.** Avant les options, exposer le problème **point par point** : la situation, ce qui est en jeu **pour le produit/métier**, pourquoi la décision se pose, et pour **chaque option** sa conséquence concrète (avantage / coût / risque), sans jargon. But : que l'utilisateur comprenne l'enjeu réel et tranche en connaissance de cause — pas à l'aveugle, pas noyé sous la technique.
+- **Test avant d'envoyer** : « Un collègue non-développeur comprendrait-il la question et chaque option ? » Si non → reformuler en métier.
 - **INTERDICTION D'UTILISER CAVEMAN dans ce cas précis.** L'explication du problème ET les libellés/descriptions des choix sont rédigés en **prose normale, complète et claire**. Caveman reste actif pour tout le reste de la session — on ne le suspend QUE pour la formulation de la question et de ses options.
 
 ---
@@ -65,7 +69,7 @@ Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilis
 
 | Préfixe | Signification |
 |---|---|
-| `[MAIN]` | Processus qui en **orchestre d'autres** — reste en `[MAIN]` en permanence (orchestrateur de plan / GO IMPLEMENTATION). |
+| `[MAIN]` | Processus qui en **orchestre d'autres** — reste en `[MAIN]` en permanence (`/orchestrator` pendant le GO IMPLEMENTATION). |
 | `[PLAN]` | En **réflexion / analyse**, rien de commencé (diagnostic, cadrage, étude du prompt, sync master, découpage). |
 | `[IMPL]` | En **cours d'implémentation** (code + tests). |
 | `[PIPE (numMR)]` | Implémentation terminée, **en attente / en fix de pipeline verte**. Dès qu'une MR existe, **inclure son numéro** : `[PIPE (1234)]`. Tant qu'aucune MR n'existe, `[PIPE]` seul. |
@@ -82,7 +86,7 @@ Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilis
 - **Le résumé décrit CE QU'ON FAIT — jamais "impl du ticket X".** 3-4 mots sur le contenu réel, pas le mot "impl" ni le numéro de ticket seul. Le résumé reste **identique** entre phases ; seul le préfixe change.
   - ❌ `[IMPL] BILL-2607 impl`
   - ✅ `[IMPL] TRY PAR EVENTID`
-- **Spécificités par workflow** : `[MAIN]` = un `/plan` **pendant le GO IMPLEMENTATION** (il supervise le DAG / les sous-plans). Un `/dev`/`/hotfix` n'utilise `[MAIN]` que s'il orchestre lui-même.
+- **Spécificités par workflow** : `[MAIN]` = **`/orchestrator`** pendant tout le GO IMPLEMENTATION (il supervise le DAG / les spikes-plan). `/plan` ne porte JAMAIS `[MAIN]` (il planifie en `[PLAN]`, attend en `[ASK]`, passe le relais à `/orchestrator`, puis `[END]`). Un `/dev`/`/hotfix` n'utilise `[MAIN]` que s'il orchestre lui-même (cas rare).
 
 ---
 
@@ -103,8 +107,9 @@ La mémoire (notes Obsidian, mémoire persistante, souvenirs de chantiers passé
 Principe Anthropic : **donner à l'agent un moyen de vérifier son propre travail** — un signal pass/fail qu'il lit et sur lequel il itère seul, au lieu que l'humain soit la boucle de vérification. Cinq leviers :
 
 1. **Preuve, jamais affirmation.** Toute conclusion « c'est vert / c'est fixé / ça boote » DOIT citer une **sortie réelle** : output de test, exit code de build, log `Started …Application in`, ligne Sonar `règle fichier:ligne`, statut de pipeline, état JIRA. Jamais « les tests passent » sans la sortie. (superpowers:verification-before-completion.)
-2. **`/goal` — ligne d'arrivée mesurable et bornée.** Pour la vérif pré-livraison, poser un `/goal` explicite plutôt que juger à l'œil : un évaluateur re-teste la condition à chaque tour, l'agent boucle jusqu'à ce qu'elle tienne. Conditions typiques : 0 test en échec (modules touchés) ; service(s) touché(s) qui bootent ; 0 violation Sonar new-code + coverage ≥ 80 % ; scope = besoin du ticket, rien de plus. Pour un `/plan` : **DAG entièrement drainé** (toutes tâches `MERGED`, tous sous-plans `DONE`, zéro orphelin au RESCAN). **Borne dure : ~6 tours max** — atteinte sans vert → surfacer (`[BLOCK]`), jamais d'acharnement.
-3. **Revue adverse en CONTEXTE FRAIS (subagent `reviewer`).** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). Déléguer au subagent **`reviewer`** (`.claude/agents/`, `opus`) qui ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) + les critères, et cherche à **réfuter** : requirement non couvert, cas limite sans test, effet de bord hors scope, bug introduit (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS**, pas des préférences de style. Traiter correctness/scope ; **ne pas sur-corriger** le reste. Alternative outillée : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
+2. **`/goal` — ligne d'arrivée mesurable et bornée.** Pour la vérif pré-livraison, poser un `/goal` explicite plutôt que juger à l'œil : un évaluateur re-teste la condition à chaque tour, l'agent boucle jusqu'à ce qu'elle tienne. Conditions typiques : 0 test en échec (modules touchés) ; service(s) touché(s) qui bootent ; 0 violation Sonar new-code + coverage ≥ 80 % ; scope = besoin du ticket, rien de plus. Pour `/orchestrator` : **DAG entièrement drainé** (toutes tâches `MERGED`, tous spikes-plan `PLANNED` avec leur sous-arbre `MERGED`, zéro orphelin au dernier RESCAN de l'umbrella). (`/plan`, lui, s'arrête au hand-off vers `/orchestrator` — il ne draine rien.) **Borne dure : ~6 tours max** — atteinte sans vert → surfacer (`[BLOCK]`), jamais d'acharnement.
+3. **LOOP JUGE en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (4 rounds max → escalade `[ASK]`). Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-surface-exchange` § LOOP JUGE. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
+   Dans les deux cas, le contrôleur ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) + les critères, et cherche à **réfuter** : requirement non couvert, cas limite sans test, effet de bord hors scope, bug introduit (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS**, pas des préférences de style. Traiter correctness/scope ; **ne pas sur-corriger** le reste. Alternative outillée : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
 4. **`/loop` — attente/polling auto-cadencé (option).** Pour surveiller un état externe qui évolue seul (pipeline CI, attente d'approbation `Approved`, `await` d'un DAG), `/loop` est l'alternative auto-cadencée aux réveils manuels. **Ne remplace PAS** la boucle `until` en background ni `ScheduleWakeup` : mécanismes équivalents. **L'outil `Monitor` reste INTERDIT** (un accord par événement bloque l'utilisateur). Intervalle calé sur la vitesse réelle de l'état surveillé (pipeline ~8 min → un check ~480 s, pas 8 checks de 60 s). **HEURES CALMES 20h–7h (CLAUDE.md) : ne JAMAIS programmer `/loop`/`ScheduleWakeup`/boucle `until` de suivi dans cette plage — vérifier `date +%H%M` avant, STOPPER NET si ∈ [2000,0659], consigner l'état, relance manuelle le matin.** Mécanique exacte de la boucle `until` (y compris le piège du process détaché qui ne notifie jamais) et son extension à l'attente d'`Approved` → skill `malt-pipeline-followup` § 3, seule source de vérité.
 5. **Explore → Plan → Code.** Séparer compréhension et exécution pour ne pas résoudre le mauvais problème. Utile quand l'approche est incertaine / multi-fichiers / code peu connu. **À sauter** si le diff tient en une phrase. Dans ces workflows, l'explore sert surtout à **vérifier le plan mâché (`Prompt`) contre le code réel** (§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL), pas à tout re-découvrir.
 
@@ -141,7 +146,7 @@ Un workflow reste **focalisé sur SON périmètre**. S'il découvre du travail a
 - **Créer un ticket JIRA dédié** (skill `/jira`) **sous le MÊME parapluie** (la User Story / umbrella parente, ou l'EPIC), pour que l'**orchestrateur de plan le capte à son RESCAN des enfants de l'umbrella**. Poser les liens de dépendance pertinents (`is blocked by`). **Label JIRA de squad obligatoire à la création** (skill `malt-squad-conventions`). **NE PAS assigner** le ticket à la création — l'assignation à `stephen.begot` n'a lieu qu'au démarrage du dev qui l'implémentera.
 - **CHOISIR LE TYPE correctement** : travail de **recherche / investigation / cadrage** → **SPIKE**, destiné à `/plan` (sous-plan récursif). Fix d'implémentation clair et borné → ticket d'implémentation → `/dev`. Rédiger la consigne dans le **champ "Prompt" (`customfield_11956`)** (jamais dans la description, qui reste métier et lisible), en indiquant explicitement `lance /plan` ou `lance /dev`.
 - **Signaler à l'orchestrateur** : en mode orchestré, mentionner le(s) ticket(s) créé(s) dans le `detail` du prochain `report` (et dans le livrable final). Ne jamais élargir silencieusement le périmètre de son propre ticket.
-- **Ne PAS orchestrer soi-même** ces tickets depuis un `/dev`/`/hotfix` : on crée et signale ; c'est l'orchestrateur de plan (ou le SPIKE-plan concerné) qui les intègre au DAG et les lance.
+- **Ne PAS orchestrer soi-même** ces tickets depuis un `/dev`/`/hotfix`/`/plan` : on crée et signale ; c'est **`/orchestrator` (l'orchestrateur unique)** qui les capte à son RESCAN de l'umbrella, les intègre au DAG et les lance. Un `/plan` enfant qui découvre du travail crée les tickets sous l'umbrella (avec liens) et les laisse à l'orchestrateur — il ne les lance jamais lui-même.
 
 ---
 

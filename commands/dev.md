@@ -6,7 +6,7 @@ description: WORKFLOW DE DEV — implémenter un ticket JIRA de bout en bout (wo
 
 $ARGUMENTS
 
-Le ticket JIRA à implémenter (numéro). La consigne d'implémentation vit dans le **champ JIRA "Prompt"** (`customfield_11956`), PAS dans la description. Si un préambule `[ORCHESTRATION CMUX]` est présent → **MODE ORCHESTRÉ** (voir ci-dessous).
+Le ticket JIRA à implémenter (numéro). La consigne d'implémentation vit dans le **champ JIRA "Prompt"** (`customfield_11956`), PAS dans la description. Si le prompt d'entrée est un lien `Lis $WF/<T>.md et exécute` dont le header (écrit par l'orchestrateur) contient `[ORCHESTRATION]` → **MODE ORCHESTRÉ** : lire ce fichier EN PREMIER (il porte le STATUS_DIR, les chemins d'inbox et la consigne), puis suivre le WORKFLOW (voir ci-dessous).
 
 **RÈGLES COMMUNES — invoquer le skill `malt-workflow-commons` EN PREMIER.** Il porte les règles partagées par `/dev` `/plan` `/hotfix` (source de vérité unique) : **§ QUESTIONS À CHOIX DE RÉPONSES**, **§ DÉCISIONS D'ARCHI & TRADEOFFS — ESCALADE OBLIGATOIRE**, **§ ACCÈS JIRA**, **§ PRÉFIXES DE HEADER CMUX**, **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL**, **§ VÉRIFICATION & BOUCLES DE CONTRÔLE**, **§ SMOKE-RUN LOCAL**, **§ /end AVEC MR — VÉRIF PIPELINE**, **§ TRAVAIL DÉCOUVERT EN COURS DE ROUTE**, **§ LIVRABLE FINAL**. Ce workflow y renvoie par le nom de section. **Suivi de pipeline (steps 7, 9, 10)** : skill `malt-pipeline-followup` (source de vérité unique dédiée).
 
@@ -18,16 +18,46 @@ Le ticket JIRA à implémenter (numéro). La consigne d'implémentation vit dans
 
 ### MODE ORCHESTRÉ — report de statut (OBLIGATOIRE si lancé par un orchestrateur de plan)
 
-Si le prompt d'entrée contient un préambule `[ORCHESTRATION CMUX]` avec `STATUS_DIR=<dir> TICKET=<ticket>`, un orchestrateur supervise ce ticket et **attend les statuts** pour déclencher les tickets dépendants. Reporter à **chaque transition de phase** :
+Si le header de MON inbox (lu via le lien du spawn) contient `[ORCHESTRATION]` avec `STATUS_DIR=<dir> TICKET=<ticket> ORCH_SURFACE=<uuid>`, un orchestrateur supervise ce ticket. **Il ne me surveille PAS : c'est MOI qui le réveille** (skill `malt-surface-exchange` § RÉVEIL). Sans mon `--notify`, le DAG n'avance pas. Reporter à **chaque transition de phase** :
 ```
-~/.claude/scripts/cmux-tab.sh report <STATUS_DIR> <TICKET> <STATE> "<detail>"
+~/.claude/scripts/cmux-tab.sh report --notify <ORCH_SURFACE> <STATUS_DIR> <TICKET> <STATE> "<detail>"
 ```
+`--notify` écrit le statut **et** injecte le réveil dans la surface de l'orchestrateur (mis en file s'il est occupé, pas envoyé en heures calmes — jamais bloquant, jamais fatal). `ORCH_SURFACE` absent du header → omettre `--notify`.
 `STATE` ∈ `IN_PROGRESS` (worktree créé) | `MR_OPEN` (MR créée, lien MR en detail) | `MERGED` (MR mergée par l'humain, lien MR en detail) | `BLOCKED` (blocage nécessitant l'humain, raison en detail). **Ne jamais clore la tâche sans avoir reporté `MERGED` ou `BLOCKED`** — l'orchestrateur en dépend. (Hors mode orchestré : ignorer les `report`.)
 
-### TITRE D'ONGLET CMUX — suivi visuel (OBLIGATOIRE)
+### PROTOCOLE DE PHASE — OBLIGATOIRE EN SOLO **ET** EN ORCHESTRÉ (RÈGLE ABSOLUE)
 
-Suivre le skill `malt-workflow-commons` **§ PRÉFIXES DE HEADER CMUX** (table unifiée). La session met à jour le header **dès qu'elle fait quelque chose** (changement de phase) et peut **revenir en arrière**. Dès qu'une MR existe, son numéro figure dans le header aussi bien en `[PIPE (num)]` qu'en `[MR (num)]`.
-Correspondance étapes : lecture ticket/étude → `[PLAN]` ; implémentation → `[IMPL]` ; suivi pipeline verte → `[PIPE (num)]` ; MR en attente d'approval → `[MR (num)]` ; clean worktree → `[CLEAN]` ; fin (MR mergée + `/end`) → `[END]`.
+**Le header CMUX et le suivi de pipeline ne sont PAS réservés au mode orchestré.** En solo (lancé par l'utilisateur, sans header `[ORCHESTRATION]`), la même discipline s'applique intégralement — c'est le défaut historique de sous-application quand aucun orchestrateur n'attend. À **chaque** transition d'étape ci-dessous, exécuter la commande de header correspondante **immédiatement**, sans exception :
+
+| Étape | Commande à exécuter |
+|---|---|
+| Lecture ticket / étude (step 1) | `~/.claude/scripts/cmux-tab.sh phase PLAN "<résumé>"` |
+| GATE liste de tests (step 3b) | `~/.claude/scripts/cmux-tab.sh phase ASK "<résumé>"` |
+| Implémentation code+tests (step 3c) | `~/.claude/scripts/cmux-tab.sh phase IMPL "<résumé>"` |
+| MR créée, attente approval (step 8) | `~/.claude/scripts/cmux-tab.sh phase MR "<résumé>"` (numéro MR : `[MR (1234)]`) |
+| Suivi pipeline verte (step 10) | `~/.claude/scripts/cmux-tab.sh phase PIPE "<résumé>"` (numéro MR : `[PIPE (1234)]`) |
+| Clean worktree | `~/.claude/scripts/cmux-tab.sh phase CLEAN "<résumé>"` |
+| Fin (MR mergée + `/end`) | `~/.claude/scripts/cmux-tab.sh phase END "<résumé>"` |
+
+Détails, retours arrière et sémantique des préfixes : skill `malt-workflow-commons` **§ PRÉFIXES DE HEADER CMUX** (table unifiée, source de vérité). Le header peut revenir en arrière (`[MR]`→`[PIPE]`→`[MR]`). Le résumé décrit CE QU'ON FAIT (jamais "impl du ticket X"), identique entre phases.
+
+**SUIVI PIPELINE + ATTENTE `Approved` = OBLIGATOIRES EN SOLO AUSSI.** Les steps 10 (skill `malt-pipeline-followup`) et 12 (lecture des notes / attente `Approved`) s'exécutent que le `/dev` soit orchestré ou non. Ne jamais « lâcher » le suivi parce que personne n'attend un `report` : la boucle de vérification (pipeline verte citée, commentaire `Approved` lu et non supposé) est due dans tous les cas.
+
+### REPORT ORCHESTRÉ — ADDITIF (uniquement si header `[ORCHESTRATION]`)
+
+Le `report` de statut (voir MODE ORCHESTRÉ ci-dessus) se **surajoute** au protocole de phase — il ne le remplace pas et n'en est pas la source. En solo, ignorer les `report` ; le protocole de phase et le suivi pipeline restent dus à l'identique.
+
+### LOOP JUGE — DÛ EN SOLO **ET** EN ORCHESTRÉ
+
+**Invoquer le skill `malt-surface-exchange` (§ LOOP JUGE).** Le juge est un **sous-agent `judge`** lancé par CETTE surface au step 4, en contexte frais, **un juge NEUF par round**, jusqu'à ce qu'un juge rende `OK` (4 rounds max → escalade `[ASK]`). Il **remplace** le subagent `reviewer`. Son compte rendu est écrit par lui-même dans le fichier de la surface : `$WF/<TICKET>.md` en orchestré, `/Users/stephenbegot/claude-exchange-llm/_solo/<TICKET>.md` en solo (créé si absent). Il n'y a **plus de surface juge, plus d'inbox juge, plus de `/judge`**.
+
+### INBOX D'ÉCHANGE — ADDITIF (uniquement si le header liste des inbox)
+
+En mode orchestré, le prompt de départ (header de MON inbox, lu au démarrage via le lien du spawn) liste mes inbox. Poser `MYIN="$WF/<TICKET>.md"` (MON inbox — je l'écoute, j'y reçois instructions/conflits, les juges y archivent leurs comptes rendus) et `OIN="$WF/_inbox/orchestrator.md"` (inbox orchestrateur — j'y poste STEP/DONE). Annoncer ces chemins (ABSOLUS) à l'utilisateur au démarrage (skill § ANNONCE DES CHEMINS). Alors :
+- **Notification à chaque étape (OBLIGATOIRE, couplée au header)** : à chaque `cmux-tab.sh phase …` du protocole ci-dessus, poser aussi `cmux-tab.sh note --notify "$ORCH_SURFACE" "$OIN" "<TICKET>[dev]" "STEP:<nom>" "<ce qui est fait/prouvé>"` (skill § NOTIFICATION À CHAQUE ÉTAPE). Les jalons pipeline verte (cité), conflits GitLab, `/end` complet, verdict juge sont explicitement dus.
+- **Coordination dev↔dev** : si un `CONFLICT` apparaît dans `$MYIN` (posté par l'orchestrateur ou un autre dev), coordonner en postant dans l'inbox de l'autre dev (`$WF/<autre>.md`) avant de toucher la zone chaude, et lire `$MYIN` pour la réponse (skill § COORDINATION DEV↔DEV).
+- **Checklist `DONE`** en fin (skill § CHECKLIST DONE FINALE) : posée sur `$OIN` avant de clore.
+En solo : cet additif est sans objet (seul le `SURFACE_FILE` du loop juge existe).
 
 ### Étapes
 
@@ -42,12 +72,14 @@ Correspondance étapes : lecture ticket/étude → `[PLAN]` ; implémentation �
 
    **3b — Liste de tests métier — GATE UTILISATEUR (RÈGLE ABSOLUE).** AVANT d'écrire le moindre test ou ligne de code, réfléchir aux cas de test **métier** que le comportement visé doit couvrir, et **soumettre à l'utilisateur une simple liste de TITRES de tests** — une ligne chacun, en langage métier, sans implémentation (juste de quoi valider que le comportement métier ciblé est le bon). Onglet `[ASK]`, prose normale (commons § QUESTIONS À CHOIX). **Attendre la validation/correction de l'utilisateur avant de coder.** C'est SA validation du besoin métier. (Diff purement mécanique sans enjeu métier — renommage, déplacement — la liste peut se réduire à 1-2 titres, mais le gate reste posé.)
 
-   **3c — TDD rouge → vert (systématique)** — skills `superpowers:test-driven-development` + `malt-backend-tdd`. Pour chaque test de la liste validée : écrire d'abord le **test rouge**, puis le **code de prod minimal** qui le fait passer au **vert**. **Jamais de code de prod avant un test rouge qui l'exige.** Recouvre COUVERTURE DE CODE (chaque ligne touchée exercée).
+   **3c — TDD rouge → vert (systématique), DÉLÉGUÉE** — skills `superpowers:test-driven-development` + `malt-backend-tdd`. Pour chaque test de la liste validée : écrire d'abord le **test rouge**, puis le **code de prod minimal** qui le fait passer au **vert**. **Jamais de code de prod avant un test rouge qui l'exige.** Recouvre COUVERTURE DE CODE (chaque ligne touchée exercée).
+
+   **DÉLÉGATION OBLIGATOIRE (skill `malt-orchestration` § DÉLÉGATION DE L'IMPLÉMENTATION).** La surface tourne en Opus : Opus **ne tape PAS le code inline**. Opus produit un **plan d'implémentation précis** (fichiers `path:line`, signatures, pattern jumeau à imiter, tests validés au GATE + ce que chacun exerce, pièges), puis **délègue tests + code à un sous-agent `sonnet`** qui exécute la boucle rouge→vert et retourne une CONCLUSION (fichiers, sortie verte citée). Découper en plusieurs sous-agents si zones indépendantes. Opus ne reprend la main que pour vérifier (step 4-5) et arbitrer. **Exception** — garder sur Opus uniquement l'implémentation réellement piégeuse (invariants, concurrence, event-sourcing non trivial) où un `sonnet` échouerait. Consommation 100 % Opus = anti-pattern (Opus a codé au lieu de déléguer).
 
    **Transverse à 3a-3c :** poser les **questions MÉTIER** nécessaires (jamais de demande de droits). **ESCALADE ARCHI** (commons § DÉCISIONS D'ARCHI & TRADEOFFS) : choix d'archi ou tradeoff différenciant non tranché par le `Prompt` → STOPPER, escalader (`[ASK]`), attendre l'accord avant de coder cette partie.
 4. **Vérification avant livraison — `/goal` borné + revue adverse en contexte frais** (skill commons § VÉRIFICATION & BOUCLES, leviers 2-3). Ne PAS juger "à l'œil" dans le contexte qui a écrit le code.
    - **Poser un `/goal` borné** : 0 test en échec sur les modules touchés, service(s) touché(s) qui bootent (step 5), 0 violation Sonar new-code + coverage new-code ≥ 80 %, scope = besoin du ticket et rien de plus. **Borne dure : ~6 tours** — si la condition ne tient pas, surfacer (`[BLOCK]`), jamais d'acharnement.
-   - **Revue adverse déléguée au subagent `reviewer`** (contexte frais, `opus`) : ne voit QUE le diff (`git diff origin/master...`) + la consigne (`Prompt`) + les critères, cherche à **réfuter**. Retourne des **GAPS**. Traiter correctness/scope ; **ne pas sur-corriger** le reste.
+   - **LOOP JUGE — OBLIGATOIRE, solo comme orchestré** (skill `malt-surface-exchange` § LOOP JUGE). Lancer un sous-agent **`judge`** frais (`CHECKPOINT=pre-push`, `ROUND=N`, worktree/branche, `REPORT_FILE=<SURFACE_FILE>`, consigne verbatim, ce que je prétends avoir fait, GAPS du round précédent + corrections). Verdict `NEEDS_WORK` → traiter chaque GAP (correctness/scope, **ne pas sur-corriger** le style) puis **round N+1 avec un juge NEUF**. **Ne pas pousser avant qu'un juge rende `OK`.** 4 rounds max → escalade `[ASK]` en citant les GAPS résiduels.
 5. **SMOKE-RUN LOCAL des services modifiés (OBLIGATOIRE)** — suivre le skill commons **§ SMOKE-RUN LOCAL** : mapper le diff vers les projets applicatifs touchés, déléguer au subagent `smoke-runner`, ne pas pousser un service cassé par le diff (bug bloquant), env local indispo = non bloquant (consigner en Tradeoffs).
 6. **Statut JIRA → "In Progress / Dev"** (skill `/jira`) — **c'est ICI que le dev commence : s'auto-assigner le ticket à `stephen.begot` MAINTENANT** (pas avant), via `PUT /rest/api/3/issue/<TICKET>/assignee` avec l'`accountId` résolu par `/rest/api/3/user/search?query=stephen.begot@malt.com`. Le passage `In Progress` et l'assignation vont de pair.
 7. **Validation Sonar PRÉ-PUSH (OBLIGATOIRE, avant tout push)** — auto-relire le code produit contre les règles du quality gate Sonar et **corriger localement** avant de pousser (une pipeline rouge sur `*-sonar` = un cycle repush complet).
@@ -78,7 +110,7 @@ Correspondance étapes : lecture ticket/étude → `[PLAN]` ; implémentation �
        ```
     Ne jamais merger sans `--squash`. Ne jamais merger sans le commentaire `Approved`.
 14. **Après merge → Statut JIRA "To Validate"** (skill `/jira`). *(Mode orchestré : `report … MERGED "<lien MR>"` — c'est CE report qui débloque les dépendants. Ne pas l'oublier.)*
-15. **Livrable final** — retourner le tableau du skill commons **§ LIVRABLE FINAL** (JIRA / Statut / MR / `/end` / Obsidian / Tradeoffs / Résumé). Le point **Tradeoffs** est OBLIGATOIRE.
+15. **Livrable final** — retourner le tableau du skill commons **§ LIVRABLE FINAL** (JIRA / Statut / MR / `/end` / Obsidian / Tradeoffs / Résumé). Le point **Tradeoffs** est OBLIGATOIRE. *(Mode orchestré : poser la checklist `DONE` dans `$OIN` (inbox orchestrateur) — skill `malt-surface-exchange` § CHECKLIST DONE FINALE — prouvant pipeline verte citée, conflits résolus, `/end` complet, verdict juge `OK`.)*
 
 **TRAVAIL DÉCOUVERT EN COURS DE ROUTE** — si ce `/dev` découvre du travail annexe : suivre le skill commons **§ TRAVAIL DÉCOUVERT** (créer un ticket dédié sous le parapluie, ne pas élargir son scope en douce, signaler à l'orchestrateur, ne pas l'orchestrer soi-même).
 

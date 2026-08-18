@@ -103,7 +103,7 @@ Domaines dispo (extrait) : `logs traces apm metrics monitors dashboards events i
 ## 6. Garde-fous
 
 - **Investigation = lecture seule** : ajouter `--read-only`. Ne jamais créer/modifier/supprimer un monitor, dashboard, downtime, etc. sans demande explicite de l'utilisateur.
-- Ne pas dumper des milliers de logs dans le contexte : borner avec `--limit` et filtrer via `--jq` / `--output table`. Pour un gros volume → écrire dans `/tmp` (cf. ÉTAT TEMPORAIRE) et ne lire que la synthèse.
+- Ne pas dumper des milliers de logs dans le contexte : borner avec `--limit` et filtrer via `--jq` / `--output table`. Pour un gros volume → écrire dans `~/tmp/scratch/` (cf. ÉTAT TEMPORAIRE ; jamais `/tmp`, purgé par macOS) et ne lire que la synthèse.
 - Toujours préciser une fenêtre temporelle (`--from`/`--to`) — sinon défaut `1h`.
 
 ## Argument

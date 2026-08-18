@@ -18,7 +18,19 @@ La description du bug (symptôme observé, contexte, éventuel lien Datadog/Sent
 
 **TOUTES les étapes sont OBLIGATOIRES, dans l'ordre. Deux phases : DIAGNOSTIC puis IMPLÉMENTATION.**
 
-**HEADER CMUX** : suivre le skill commons **§ PRÉFIXES DE HEADER CMUX**. Fil : diagnostic `[PLAN]` → correctif + MR au plus tôt `[IMPL]`→`[MR (<numMR>)]` → vérif locale en parallèle `[IMPL]`/`[PIPE (<numMR>)]` → attente approval `[MR (<numMR>)]` → `[CLEAN]` → `[END]`. Retours arrière autorisés.
+**HEADER CMUX — PROTOCOLE DE PHASE OBLIGATOIRE EN SOLO ET EN ORCHESTRÉ (RÈGLE ABSOLUE).** Le header et le suivi pipeline ne sont PAS réservés au mode orchestré : `/hotfix` étant presque toujours lancé en solo, la discipline s'applique intégralement. À **chaque** transition, exécuter immédiatement `~/.claude/scripts/cmux-tab.sh phase <PREFIX> "<résumé>"` :
+
+| Phase hotfix | Préfixe |
+|---|---|
+| Diagnostic (Phase 1) | `PLAN` |
+| Cause racine à arbitrer / question (step 5-6) | `ASK` |
+| Correctif + push MR au plus tôt (step 7a) | `IMPL` puis `MR` (numéro : `[MR (1234)]`) |
+| Vérif locale lourde en parallèle (step 7b) | `IMPL` / `PIPE` selon repush |
+| Attente approval (step 7c) | `MR (<numMR>)` |
+| Clean worktree | `CLEAN` |
+| Fin (MR mergée + `/end`) | `END` |
+
+Sémantique, retours arrière et table unifiée : skill commons **§ PRÉFIXES DE HEADER CMUX** (source de vérité). Le résumé décrit CE QU'ON FAIT (le bug réel), jamais "diag ticket X". **Suivi pipeline (`malt-pipeline-followup`) + lecture des notes / attente `Approved` (step 7c) = dus en solo aussi**, jamais « lâchés » faute d'orchestrateur qui attend.
 
 ---
 
@@ -49,12 +61,13 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
 
    **7a — MR AU PLUS TÔT (avant tests/build locaux lourds) :**
    - Worktree + branche (base `origin/master`, hors repo) — GIT WORKFLOW (CLAUDE.md).
-   - **TDD sur le bug** : écrire d'abord un test qui **reproduit le bug** (rouge), puis appliquer le fix. **Confirmer localement le passage rouge→vert du SEUL test qui cible le bug** (pas la suite complète). Recouvre COUVERTURE DE CODE. Utiliser des sous-agents (ORCHESTRATION).
+   - **TDD sur le bug** : écrire d'abord un test qui **reproduit le bug** (rouge), puis appliquer le fix. **Confirmer localement le passage rouge→vert du SEUL test qui cible le bug** (pas la suite complète). Recouvre COUVERTURE DE CODE.
+   - **DÉLÉGATION OBLIGATOIRE (skill `malt-orchestration` § DÉLÉGATION DE L'IMPLÉMENTATION).** La cause racine et le plan de fix (arrêtés en Phase 1) restent sur Opus ; l'**écriture du test de repro + du fix** part en sous-agent `sonnet` via un plan précis (fichier `path:line`, forme exacte du fix, test attendu, pattern jumeau), qui exécute rouge→vert et retourne la CONCLUSION (sortie verte citée). Opus ne tape pas le code inline. **Exception** — fix réellement piégeux (invariant/concurrence) reste sur Opus. Consommation 100 % Opus = anti-pattern.
    - **Dès le fix appliqué et ce test ciblé au vert** → Statut JIRA → "In Progress / Dev" (**c'est ICI qu'on s'auto-assigne le ticket à `stephen.begot`**, `PUT /issue/<TICKET>/assignee`, pas avant), puis **Push + MR IMMÉDIATEMENT** (`/gitlab-resume`, reviewer `@stephen.begot`, labels de squad — skill `malt-squad-conventions`, **titre `[<TICKET>] …`** en anglais — le ticket bug existe, on utilise son numéro comme tout `/dev` ; cf. GIT WORKFLOW). Onglet `[MR (<numMR>)] <résumé>`. **La pipeline distante tourne dès maintenant.**
 
    **7b — VÉRIFICATION LOCALE LOURDE, EN PARALLÈLE DE LA PIPELINE (après la MR) :**
    - Pendant que la pipeline tourne : lancer la **suite de tests complète des modules touchés + le build** localement, et le **SMOKE-RUN LOCAL** des services touchés (skill commons § SMOKE-RUN LOCAL).
-   - **`/goal` borné + revue adverse en contexte frais** (skill commons § VÉRIFICATION & BOUCLES, leviers 2-3) : `/goal` sur 0 test en échec + service qui boote + scope = LE bug et rien d'autre, borne ~6 tours ; subagent `reviewer` (`opus`) qui ne voit QUE le diff + la consigne du fix et cherche à réfuter (le fix corrige-t-il vraiment la cause racine ? cas limite ? effet de bord ?). Traiter correctness/scope, ne pas sur-corriger. Ne JAMAIS juger dans le contexte qui a écrit le fix.
+   - **`/goal` borné + LOOP JUGE** (skill commons § VÉRIFICATION & BOUCLES, leviers 2-3) : `/goal` sur 0 test en échec + service qui boote + scope = LE bug et rien d'autre, borne ~6 tours ; puis **LOOP JUGE — obligatoire, solo comme orchestré** (skill `malt-surface-exchange` § LOOP JUGE) : lancer un sous-agent **`judge`** frais (`CHECKPOINT=hotfix-verify`, `ROUND=N`, worktree/branche, `REPORT_FILE=<SURFACE_FILE>` — en solo `/Users/stephenbegot/claude-exchange-llm/_solo/<TICKET>.md`, consigne du fix + cause racine, ce que je prétends avoir fait). Le juge contrôle : le fix corrige-t-il vraiment la cause racine ? test qui reproduit le bug ? cas limite ? effet de bord ? **Un juge NEUF par round**, jusqu'à `OK` (4 rounds max → `[ASK]`). Traiter correctness/scope, ne pas sur-corriger. Ne JAMAIS juger dans le contexte qui a écrit le fix.
    - **Validation Sonar** (ici c'est un post-push assumé : la MR existe déjà, on valide en parallèle).
    - **Si une vérif locale échoue** (test, build, smoke-run, judge, Sonar) → fixer, commit + **repush sur la branche de la MR** (jamais master), la pipeline se relance. Onglet `[IMPL]`/`[PIPE (<numMR>)]`.
 
