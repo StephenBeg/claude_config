@@ -27,7 +27,7 @@ Signal « trop gros » : > ~8-10 tâches parallélisables, ou le découpage natu
 
 ## WORKFLOW DE PLAN
 
-**HEADER CMUX** (commons § PRÉFIXES) : `[PLAN]` en analyse/découpage, `[ASK]` en attente du `GO`. **Pas de `[MAIN]`** — `/plan` n'orchestre plus (c'est `/orchestrator` qui porte `[MAIN]`).
+**HEADER CMUX** (commons § PRÉFIXES) : `[PLAN]` en analyse/découpage, `[ASK]` en attente du `GO`. **Jamais `[ORCH]`** — `/plan` n'orchestre plus (c'est `/orchestrator` seul qui porte `[ORCH]`). `[JUGE]` pendant un round de la LOOP JUGE.
 
 Étapes dans l'ordre :
 

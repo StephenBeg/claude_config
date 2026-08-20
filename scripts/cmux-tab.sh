@@ -5,7 +5,7 @@
 #   cmux-tab.sh set   "<titre>"          # renomme le tab courant
 #   cmux-tab.sh phase PLAN "<3-4 mots>" # préfixe + résumé. Les CROCHETS sont posés
 #                                        # par le script ; un préfixe hors liste est REFUSÉ.
-#                                        # MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END
+#                                        # ORCH|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END|JUGE
 #   cmux-tab.sh topic "<3-4 mots>"       # (re)pose le résumé seul ; il survit aux phases
 #   cmux-tab.sh mr <IID>                 # mémorise la MR -> header "[MR (1234)] …" automatique
 #   cmux-tab.sh sync                     # recale le header sur le RÉEL (branche + MR ouverte)
@@ -252,7 +252,7 @@ case "$cmd" in
   phase)
     # phase <PREFIX> ["<résumé>"] — les crochets sont posés par le SCRIPT.
     # Tolère les formes historiques : "[MR (1234)]", "[PLAN]", "mr".
-    raw="${1:?prefix requis (MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END)}"
+    raw="${1:?prefix requis (ORCH|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END|JUGE)}"
     summary="${2:-}"
     mrnum="$(printf '%s' "$raw" | grep -oE '[0-9]+' | head -1 || true)"
     prefix="$(printf '%s' "$raw" | tr -cd '[:alpha:]' | tr '[:lower:]' '[:upper:]')"

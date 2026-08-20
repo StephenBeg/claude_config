@@ -7,7 +7,7 @@ description: Règles communes aux workflows /dev /plan /hotfix (source de vérit
 
 Bloc de règles **partagées** par les trois workflows. Source de vérité UNIQUE : ne jamais recopier ces sections dans une commande — la commande invoque ce skill et renvoie à la section par son nom. Chaque commande **invoque ce skill en premier**, puis suit ses étapes propres.
 
-Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser qu'un sous-ensemble (ex : `/plan` n'a ni smoke-run ni MR ; `/orchestrator` est le seul à porter `[MAIN]` en continu — `/plan` planifie puis passe le relais et ne supervise rien).
+Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser qu'un sous-ensemble (ex : `/plan` n'a ni smoke-run ni MR ; `/orchestrator` est le seul à porter `[ORCH]` en continu — `/plan` planifie puis passe le relais et ne supervise rien).
 
 ---
 
@@ -53,6 +53,8 @@ Défaut historique de Claude : **prendre trop de décisions d'archi et de tradeo
 
 Toute interaction JIRA d'un workflow (lecture ticket, création, transitions de statut, commentaires, liens de dépendance) passe par le skill `/jira`. **Si le MCP Atlassian n'est PAS connecté** (auth échoue / tools `jira_*` indisponibles) → **NE PAS bloquer** : utiliser le **fallback API REST v3** documenté dans le skill `/jira` (curl + Basic auth, env `.zshrc`). Le skill `/jira` gère les deux : MCP si dispo, sinon REST. Vérifier au besoin :
 
+**Transitions de statut = plomberie mécanique, DÉLÉGUER en `haiku` (skill `malt-orchestration` § dimensionnement model).** `In Progress`/`Review`/`To Validate`, auto-assignation, pose de labels, commentaire déjà rédigé → appel API déterministe, zéro raisonnement, ne pas l'exécuter inline dans la session principale (sonnet/opus). La session principale fournit la valeur (statut cible, texte du commentaire) au sous-agent `haiku`, qui exécute l'appel.
+
 ```
 curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" "$ATLASSIAN_SITE/rest/api/3/myself"   # → 200
 ```
@@ -81,9 +83,14 @@ Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilis
 
 Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WAIT]`, `[END]`, le `topic`, et tout retour arrière métier (`[MR]` → `[IMPL]` sur request changes).
 
+**GARDE-FOU — RÈGLES ABSOLUES :**
+- `[MAIN]` **N'EXISTE PLUS** (whitelist script). Le préfixe orchestrateur est **`[ORCH]`** — `/orchestrator` uniquement, en continu pendant tout le GO IMPLEMENTATION. Aucune autre surface ne pose jamais `[ORCH]`.
+- `[JUGE]` **obligatoire** dès qu'une surface (`/dev`, `/hotfix`, `/plan`) lance son sous-agent `judge` et attend son verdict — le temps du round de jugement. Retour à la phase précédente (`[MR]`, `[PIPE]`, …) dès le verdict reçu (`OK` ou `NEEDS_WORK` traité).
+
 | Préfixe | Signification |
 |---|---|
-| `[MAIN]` | Processus qui en **orchestre d'autres** — reste en `[MAIN]` en permanence (`/orchestrator` pendant le GO IMPLEMENTATION). |
+| `[ORCH]` | Processus qui en **orchestre d'autres** — reste en `[ORCH]` en permanence (`/orchestrator` pendant le GO IMPLEMENTATION). Réservé à `/orchestrator` ; jamais posé par `/dev` `/hotfix` `/plan`. |
+| `[JUGE]` | Sous-agent `judge` en cours d'exécution sur cette surface — round de contrôle radical-honesty en attente de verdict. |
 | `[PLAN]` | En **réflexion / analyse**, rien de commencé (diagnostic, cadrage, étude du prompt, sync master, découpage). |
 | `[IMPL]` | En **cours d'implémentation** (code + tests). |
 | `[PIPE (numMR)]` | Implémentation terminée, **en attente / en fix de pipeline verte**. Dès qu'une MR existe, **inclure son numéro** : `[PIPE (1234)]`. Tant qu'aucune MR n'existe, `[PIPE]` seul. |
@@ -101,7 +108,8 @@ Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WA
 - **Le résumé décrit CE QU'ON FAIT — jamais "impl du ticket X".** 3-4 mots sur le contenu réel, pas le mot "impl" ni le numéro de ticket seul. Le résumé reste **identique** entre phases ; seul le préfixe change.
   - ❌ `[IMPL] BILL-2607 impl`
   - ✅ `[IMPL] TRY PAR EVENTID`
-- **Spécificités par workflow** : `[MAIN]` = **`/orchestrator`** pendant tout le GO IMPLEMENTATION (il supervise le DAG / les spikes-plan). `/plan` ne porte JAMAIS `[MAIN]` (il planifie en `[PLAN]`, attend en `[ASK]`, passe le relais à `/orchestrator`, puis `[END]`). Un `/dev`/`/hotfix` n'utilise `[MAIN]` que s'il orchestre lui-même (cas rare).
+- **Spécificités par workflow** : `[ORCH]` = **`/orchestrator`** pendant tout le GO IMPLEMENTATION (il supervise le DAG / les spikes-plan) — **et lui seul**. `/plan` ne porte JAMAIS `[ORCH]` (il planifie en `[PLAN]`, attend en `[ASK]`, passe le relais à `/orchestrator`, puis `[END]`). `/dev`/`/hotfix` ne posent JAMAIS `[ORCH]` non plus, même s'ils orchestrent un sous-agent ponctuel — `[ORCH]` est réservé à la surface `/orchestrator`.
+- **`[JUGE]`** : posé par `/dev`/`/hotfix`/`/plan` (jamais `/orchestrator`) à chaque round de la LOOP JUGE (skill `malt-surface-exchange`), tant que le sous-agent `judge` tourne. Un nouveau round = repasser par `[JUGE]` à chaque fois (juge frais).
 
 ---
 
@@ -110,7 +118,7 @@ Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WA
 La mémoire (notes Obsidian, mémoire persistante, souvenirs de chantiers passés) est un **point de départ, jamais une vérité**. Elle est **souvent périmée ou fausse** (drift). Avant d'ancrer une décision (plan, diagnostic, implémentation) sur un fait mémorisé, **le confirmer contre le réel** :
 
 - **Code** : lire le fichier/symbole réel **sur `master` fraîchement synchronisé**, pas le souvenir de sa localisation/signature. Toute citation d'un sous-agent = `path:line` vu dans le code courant, jamais de mémoire.
-- **Runtime / prod** : pour tout fait sur le comportement en prod (état d'un FF, volumétrie, erreurs, chemin réellement emprunté) → **vérifier via Datadog** (`/datadog` : logs/traces/métriques) ou **Sentry** (`/sentry-analyzer`) plutôt que supposer.
+- **Runtime / prod** : pour tout fait sur le comportement en prod (état d'un FF, volumétrie, erreurs, chemin réellement emprunté) → **vérifier via Datadog** (`/datadog` : logs/traces/métriques) ou **Sentry** (`/sentry-analyzer`) plutôt que supposer. **Le fetch brut = plomberie mécanique, DÉLÉGUER en `haiku`** (skill `malt-orchestration` § dimensionnement model) : lancer la requête `pup`/Sentry et remonter logs/traces/stacktrace/métriques bruts filtrés en CONCLUSION. La session principale fournit la requête cible et **interprète** le résultat (cause racine) — le fetch lui-même ne tourne jamais inline en sonnet/opus.
 - **JIRA / FF / config** : état d'un ticket, d'un feature flag, d'une config → lire la source vivante (JIRA, fichiers ff4j, app-config), pas la mémoire.
 - **Drift** : si le réel contredit une note Obsidian → **corriger la note** (`/obsidian` capture) dans la foulée.
 - Chaque affirmation structurante doit être **traçable à une source réelle vérifiée cette session** (path:line, requête Datadog, ticket JIRA). Une hypothèse non vérifiée est **marquée explicitement** comme telle, jamais présentée comme un fait.
@@ -125,6 +133,7 @@ Principe Anthropic : **donner à l'agent un moyen de vérifier son propre travai
 2. **`/goal` — ligne d'arrivée mesurable et bornée.** Pour la vérif pré-livraison, poser un `/goal` explicite plutôt que juger à l'œil : un évaluateur re-teste la condition à chaque tour, l'agent boucle jusqu'à ce qu'elle tienne. Conditions typiques : 0 test en échec (modules touchés) ; service(s) touché(s) qui bootent ; 0 violation Sonar new-code + coverage ≥ 80 % ; scope = besoin du ticket, rien de plus. Pour `/orchestrator` : **DAG entièrement drainé** (toutes tâches `MERGED`, tous spikes-plan `PLANNED` avec leur sous-arbre `MERGED`, zéro orphelin au dernier RESCAN de l'umbrella). (`/plan`, lui, s'arrête au hand-off vers `/orchestrator` — il ne draine rien.) **Borne dure : ~6 tours max** — atteinte sans vert → surfacer (`[BLOCK]`), jamais d'acharnement.
 3. **LOOP JUGE en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (4 rounds max → escalade `[ASK]`). Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-surface-exchange` § LOOP JUGE. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
    Dans les deux cas, le contrôleur ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) + les critères, et cherche à **réfuter** : requirement non couvert, cas limite sans test, effet de bord hors scope, bug introduit (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS**, pas des préférences de style. Traiter correctness/scope ; **ne pas sur-corriger** le reste. Alternative outillée : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
+   Un round `NEEDS_WORK` ne se traite jamais à moitié : le juge est déjà exhaustif en un seul passage, donc chaque GAP est fermé avec une **preuve rejouée** avant resoumission (skill `malt-surface-exchange` § LOOP JUGE) — sinon le round suivant retrouve du travail bâclé, pas de nouveaux problèmes.
 4. **`/loop` — attente/polling auto-cadencé (option).** Pour surveiller un état externe qui évolue seul (pipeline CI, attente d'approbation `Approved`, `await` d'un DAG), `/loop` est l'alternative auto-cadencée aux réveils manuels. **Ne remplace PAS** la boucle `until` en background ni `ScheduleWakeup` : mécanismes équivalents. **L'outil `Monitor` reste INTERDIT** (un accord par événement bloque l'utilisateur). Intervalle calé sur la vitesse réelle de l'état surveillé (pipeline ~8 min → un check ~480 s, pas 8 checks de 60 s). **HEURES CALMES 20h–7h (CLAUDE.md) : ne JAMAIS programmer `/loop`/`ScheduleWakeup`/boucle `until` de suivi dans cette plage — vérifier `date +%H%M` avant, STOPPER NET si ∈ [2000,0659], consigner l'état, relance manuelle le matin.** Mécanique exacte de la boucle `until` (y compris le piège du process détaché qui ne notifie jamais) et son extension à l'attente d'`Approved` → skill `malt-pipeline-followup` § 3, seule source de vérité.
 5. **Explore → Plan → Code.** Séparer compréhension et exécution pour ne pas résoudre le mauvais problème. Utile quand l'approche est incertaine / multi-fichiers / code peu connu. **À sauter** si le diff tient en une phrase. Dans ces workflows, l'explore sert surtout à **vérifier le plan mâché (`Prompt`) contre le code réel** (§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL), pas à tout re-découvrir.
 

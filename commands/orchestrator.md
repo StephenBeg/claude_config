@@ -22,15 +22,15 @@ Il existe **un seul processus orchestrateur par workspace CMUX**. Un `/plan` (ra
 
 ## HEADER CMUX
 
-`[MAIN]` en permanence (ce processus en orchestre d'autres — commons § PRÉFIXES). `[ASK]` ponctuel quand un `BLOCKED` est surfacé à l'utilisateur. `[END]` au drainage complet.
+`[ORCH]` en permanence (ce processus en orchestre d'autres — commons § PRÉFIXES ; réservé à `/orchestrator`, plus rien ne flag `[MAIN]`). `[ASK]` ponctuel quand un `BLOCKED` est surfacé à l'utilisateur. `[END]` au drainage complet.
 
 ```
-~/.claude/scripts/cmux-tab.sh phase MAIN "<résumé chantier>"
+~/.claude/scripts/cmux-tab.sh phase ORCH "<résumé chantier>"
 ```
 
 ## WORKFLOW — RÈGLE ABSOLUE (toutes les étapes obligatoires)
 
-1. **Titre onglet** → `[MAIN] <résumé chantier>`.
+1. **Titre onglet** → `[ORCH] <résumé chantier>`.
 2. **Vérifier l'input** : EPIC/umbrella connu (sinon demander). `WF=/Users/stephenbegot/claude-exchange-llm/<EPIC>` ; `STATUS_DIR="$WF/_status"` ; `mkdir -p "$STATUS_DIR"` + un header `TMP_INDEX` (skill `malt-orchestration`). **Jamais `/tmp`.**
 2a. **Mémoriser sa propre surface** — indispensable au réveil par push (skill `malt-surface-exchange` § RÉVEIL) :
    ```

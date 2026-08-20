@@ -22,7 +22,7 @@ description: Comment Claude travaille sur le repo Malt — orchestration par sou
 **Parallélisation :** sous-tâches indépendantes → plusieurs sous-agents dans le même message.
 
 **Subagents réutilisables (`.claude/agents/`)** — les préférer aux `Agent` ad-hoc :
-- **`explorer`** (`sonnet`, read-only) : localiser/explorer, retourne `path:line` + pattern jumeau, jamais de dump.
+- **`explorer`** (`haiku`, read-only) : localiser/explorer, retourne `path:line` + pattern jumeau, jamais de dump. **Retry en `sonnet`** si la réponse ne contient aucun `path:line` ou dit explicitement "non trouvé"/"introuvable" — sinon garder la réponse haiku telle quelle (validé sur cas à réponse connue : 0 hallucination sur path:line détectée).
 - **`reviewer`** (`opus`) : revue adverse d'un diff en contexte frais, retourne des GAPS correctness/scope.
 - **`smoke-runner`** (`haiku`) : `bootRun` + verdict `BOOTED_OK`/`BOOT_FAILED`.
 

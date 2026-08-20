@@ -9,6 +9,19 @@
             "command": "/Users/stephenbegot/.claude/scripts/master-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/pg-write-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/netsuite-write-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

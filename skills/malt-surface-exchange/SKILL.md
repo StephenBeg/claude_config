@@ -15,9 +15,11 @@ Rend les échanges entre surfaces CMUX d'un chantier **auditables** (journal imm
 
 Toutes les sections sont des **RÈGLES ABSOLUES**.
 
+**ROUTAGE PAR MODE — chaque section est taguée `[SOLO+ORCHESTRÉ]` ou `[ORCHESTRÉ UNIQUEMENT]`.** `/dev`/`/hotfix`/`/plan` en **solo** (pas de header `[ORCHESTRATION]`) : lire seulement les sections `[SOLO+ORCHESTRÉ]` — § ARBORESCENCE (paragraphe « Cas SOLO »), § LOOP JUGE, § RÔLE DU JUGE. Les sections `[ORCHESTRÉ UNIQUEMENT]` ne s'appliquent pas et peuvent être sautées. `/orchestrator` et les surfaces qu'il spawn lisent tout.
+
 ---
 
-## § RÉVEIL — push actif d'abord, re-scan idempotent comme socle (RÈGLE ABSOLUE)
+## § RÉVEIL [ORCHESTRÉ UNIQUEMENT] — push actif d'abord, re-scan idempotent comme socle (RÈGLE ABSOLUE)
 
 Corrige le bug historique « l'orchestrateur ne repart que si l'humain tape *continue* ».
 
@@ -50,7 +52,7 @@ Corrige le bug historique « l'orchestrateur ne repart que si l'humain tape *con
 
 ---
 
-## § ARBORESCENCE — un dossier par workflow, un inbox par surface
+## § ARBORESCENCE — un dossier par workflow, un inbox par surface [ORCHESTRÉ UNIQUEMENT]
 
 Racine : `/Users/stephenbegot/claude-exchange-llm/`. **Un sous-dossier par WORKFLOW** (chantier orchestré — isole les orchestrateurs parallèles) ; nommé d'après l'**EPIC/umbrella** (source de vérité du périmètre, connue de l'orchestrateur). Sous lui : l'inbox fixe de l'orchestrateur dans `_inbox/`, plus un inbox par ticket à la racine.
 
@@ -78,7 +80,7 @@ Racine : `/Users/stephenbegot/claude-exchange-llm/`. **Un sous-dossier par WORKF
 
 ---
 
-## § ANATOMIE D'UN INBOX — header + journal append-only
+## § ANATOMIE D'UN INBOX — header + journal append-only [ORCHESTRÉ UNIQUEMENT]
 
 Chaque inbox a **deux zones** :
 
@@ -119,7 +121,7 @@ Appendre une entrée de journal :
 
 ---
 
-## § QUI CRÉE QUOI — l'orchestrateur possède les inbox
+## § QUI CRÉE QUOI — l'orchestrateur possède les inbox [ORCHESTRÉ UNIQUEMENT]
 
 **L'orchestrateur crée et header TOUS les inbox.** Aucune autre surface ne crée d'inbox (elles n'appendent qu'aux journaux d'inbox déjà créés).
 
@@ -132,7 +134,7 @@ En **solo**, il n'y a pas d'orchestrateur : la surface crée elle-même son `SUR
 
 ---
 
-## § SPAWN = LIEN SEUL — tout le prompt vit dans l'inbox de la surface
+## § SPAWN = LIEN SEUL — tout le prompt vit dans l'inbox de la surface [ORCHESTRÉ UNIQUEMENT]
 
 `cmux-tab.sh spawn` ne construit **aucun préambule** : le prompt de départ est **déjà** dans le header de l'inbox `$WF/<T>.md`. Le spawn ne transporte qu'un **pointeur** :
 
@@ -153,7 +155,7 @@ Séquence orchestrateur pour chaque surface (dev ou plan) :
 
 ---
 
-## § ANNONCE DES CHEMINS AU DÉMARRAGE — OBLIGATOIRE
+## § ANNONCE DES CHEMINS AU DÉMARRAGE — OBLIGATOIRE [ORCHESTRÉ UNIQUEMENT]
 
 Dès sa 1re étape, **toute surface CMUX** (dev/plan/hotfix, ainsi que l'orchestrateur pour son propre inbox) **affiche à l'utilisateur, en clair et en chemin ABSOLU**, l'inbox qu'elle écoute et ceux où elle poste, pour qu'il puisse les **ouvrir en side dans cmux** :
 
@@ -165,7 +167,7 @@ Dès sa 1re étape, **toute surface CMUX** (dev/plan/hotfix, ainsi que l'orchest
 
 L'orchestrateur affiche son **propre** inbox. En **solo**, afficher le seul `SURFACE_FILE` (`…/_solo/<TICKET>.md`) dès le premier round de juge.
 
-## § NOTIFICATION À CHAQUE ÉTAPE — OBLIGATOIRE (couplée au header CMUX)
+## § NOTIFICATION À CHAQUE ÉTAPE — OBLIGATOIRE (couplée au header CMUX) [ORCHESTRÉ UNIQUEMENT]
 
 **Règle de couplage : chaque fois qu'une surface met à jour son header CMUX (`cmux-tab.sh phase …`), elle pose AUSSI une entrée `note STEP:<nom>` dans l'INBOX ORCHESTRATEUR** (`$WF/_inbox/orchestrator.md`) — même contenu de résumé. Header et journal avancent ensemble ; un header à jour sans entrée (ou l'inverse) = violation.
 
@@ -181,7 +183,7 @@ L'orchestrateur affiche son **propre** inbox. En **solo**, afficher le seul `SUR
 
 ---
 
-## § LOOP JUGE (côté /dev · /hotfix · /plan) — sous-agent frais par round, borné jusqu'au verdict OK
+## § LOOP JUGE [SOLO+ORCHESTRÉ] (côté /dev · /hotfix · /plan) — sous-agent frais par round, borné jusqu'au verdict OK
 
 **S'applique EN SOLO COMME EN ORCHESTRÉ.** Le juge est un **sous-agent `judge`** (`Agent` tool, `subagent_type: "judge"`), lancé **par la surface elle-même**, en contexte frais, **synchrone** (`run_in_background: false` — on a besoin du verdict pour continuer). Il **remplace** le subagent `reviewer` à ces checkpoints et remplace l'ancienne surface `/judge` (supprimée : plus d'inbox juge, plus de monitor à surveiller, plus de navigation entre onglets).
 
@@ -209,6 +211,14 @@ C'est **le juge** qui y append son compte rendu (`JUDGE-VERDICT: … round N` + 
 2. **Lire le verdict retourné** (et le compte rendu dans `SURFACE_FILE`) :
    - `VERDICT: OK` → checkpoint franchi, continuer.
    - `VERDICT: NEEDS_WORK` → traiter **chaque GAP** (correctness/scope ; pas de sur-correction de style), repush si besoin (`[IMPL]`/`[PIPE]`), puis **round N+1 avec un juge NEUF**. Les corrections ne valent jamais approbation : re-soumettre.
+
+**RÈGLE ABSOLUE — PAS DE ROUND N+1 SANS PREUVE DE CLÔTURE PAR GAP.** Le juge est déjà exhaustif en un seul passage (round 1 liste TOUS les GAPS d'un coup — voir `judge.md` § EXHAUSTIVITÉ). Si un round N+1 retrouve encore quelque chose, ce n'est quasiment jamais que le juge a mal cherché : c'est que la correction du round N était **incomplète, bâclée, ou a introduit un effet de bord**, resoumise sans vérification. Métaphore : le juge dit « il manque 80 % du mur à peindre » — repeindre 20 % puis resoumettre en espérant que ça passe est **interdit**. Pour CHAQUE GAP du round N, avant de relancer un juge :
+1. **Traiter toute l'étendue du GAP**, pas seulement l'exemple cité (le juge dit "cas limite X non testé sur la méthode Y" → vérifier s'il y a d'autres cas analogues non couverts sur la même méthode, pas seulement X).
+2. Appliquer le fix.
+3. **Produire la preuve de clôture spécifique à ce GAP** — rejouer exactement ce que le GAP mettait en défaut : le test cité repasse au vert (sortie citée), la ligne signalée est désormais couverte (rapport de coverage), le comportement décrit est effectivement présent dans le diff (`path:line` cité), le test de non-régression pour un bug introduit existe et passe.
+4. **Un GAP n'est coché fermé QUE si cette preuve rejouée existe.** "Je pense l'avoir corrigé" sans preuve rejouée = GAP encore ouvert — ne pas resoumettre tant que ce n'est pas fait.
+5. Seulement quand TOUS les GAPS du round N sont fermés avec preuve → lancer le `judge` round N+1, en indiquant pour chaque GAP la preuve rejouée dans `CE QUE J'AI CORRIGÉ` (pas une simple déclaration) — le juge round N+1 vérifie vite au lieu de tout redécouvrir.
+
 3. **Borne dure : 4 rounds.** Toujours `NEEDS_WORK` au round 4, ou désaccord technique argumenté → **STOPPER, escalader à l'utilisateur** (`[ASK]`) en citant les GAPS résiduels. Jamais d'acharnement, jamais franchir en ignorant un verdict.
 4. **Notifier** (mode orchestré) : `note "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:judge" "round N → OK|NEEDS_WORK (<résumé>)"`.
 
@@ -218,7 +228,7 @@ Le loop est **entièrement contenu dans la surface** : aucune attente inter-surf
 
 ---
 
-## § RÔLE DU JUGE (sous-agent `judge`)
+## § RÔLE DU JUGE [SOLO+ORCHESTRÉ] (sous-agent `judge`)
 
 Le prompt système complet vit dans `~/.claude/agents/judge.md`. Invariants portés ici (source de vérité) :
 
@@ -229,7 +239,7 @@ Le prompt système complet vit dans `~/.claude/agents/judge.md`. Invariants port
 
 ---
 
-## § RÔLE DE L'ORCHESTRATEUR (côté /orchestrator)
+## § RÔLE DE L'ORCHESTRATEUR (côté /orchestrator) [ORCHESTRÉ UNIQUEMENT]
 
 - **Créer l'arbre du workflow** au démarrage : `WF=/Users/stephenbegot/claude-exchange-llm/<EPIC>` ; `mkdir -p "$WF/_inbox"` ; `pair-init "$WF/_inbox/orchestrator.md"` (header minimal). **Aucun inbox juge, aucune surface juge à spawner.**
 - **Pour chaque ticket spawné** (racine ou capté au RESCAN, dev ET plan) : `pair-init "$WF/<T>.md"` (header = prompt de départ, incluant le checkpoint juge attendu) ; puis `spawn "Lis $WF/<T>.md et exécute…" "<T> …"` (lien seul) ; puis `report SPAWNED`. **Aucun câblage juge** — la surface lance son propre sous-agent `judge`.
@@ -241,13 +251,13 @@ Le prompt système complet vit dans `~/.claude/agents/judge.md`. Invariants port
 
 ---
 
-## § COORDINATION DEV↔DEV (sur conflit détecté)
+## § COORDINATION DEV↔DEV (sur conflit détecté) [ORCHESTRÉ UNIQUEMENT]
 
 Amorcée **par l'orchestrateur** quand deux devs en vol touchent des zones communes : il poste un `CONFLICT` dans l'inbox de chaque dev (`$WF/<A>.md`, `$WF/<B>.md`) nommant le fichier/domaine partagé et qui a la priorité. **Aucun fichier dédié** (`_pairs/` n'existe plus). Ensuite, **avant de toucher la zone chaude**, un dev poste un `CONFLICT` dans l'inbox de l'autre (`$WF/<autre>.md`) — « ce que je vais modifier, quand » — et lit son propre inbox pour la réponse. Pas de conflit détecté → pas de `CONFLICT`, pas de coordination.
 
 ---
 
-## § CHECKLIST DONE FINALE — auditable
+## § CHECKLIST DONE FINALE — auditable [ORCHESTRÉ UNIQUEMENT]
 
 Avant de clore, chaque surface `/dev`/`/plan` (mode orchestré) pose une entrée `DONE` dans l'**inbox orchestrateur** — trace qu'un audit relit :
 

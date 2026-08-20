@@ -8,7 +8,7 @@ dépendent de CE fichier, écrit par `cmux-tab.sh` et par les hooks déterminist
 Fichier : ~/claude-exchange-llm/_phase/<SURFACE>.json   (JAMAIS /tmp — CLAUDE.md)
 
 Champs :
-  phase      préfixe courant (MAIN|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END)
+  phase      préfixe courant (ORCH|PLAN|IMPL|PIPE|MR|ASK|BLOCK|WAIT|CLEAN|END|JUGE)
   prev_phase phase d'avant un [ASK]/[BLOCK]/[WAIT] — sert à en RESSORTIR tout seul
   topic      résumé 3-4 mots, stable entre les phases (ce qu'on FAIT)
   ticket     numéro JIRA si connu
@@ -22,7 +22,7 @@ import os
 import sys
 import time
 
-PHASES = ["MAIN", "PLAN", "IMPL", "PIPE", "MR", "ASK", "BLOCK", "WAIT", "CLEAN", "END"]
+PHASES = ["ORCH", "PLAN", "IMPL", "PIPE", "MR", "ASK", "BLOCK", "WAIT", "CLEAN", "END", "JUGE"]
 # Phases "d'attente" : on mémorise ce qu'on faisait avant pour y revenir seul.
 TRANSIENT = {"ASK", "BLOCK", "WAIT"}
 DIR = os.path.expanduser("~/claude-exchange-llm/_phase")

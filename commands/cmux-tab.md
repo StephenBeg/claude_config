@@ -24,7 +24,7 @@ $ARGUMENTS
 ~/.claude/scripts/cmux-tab.sh status <status_dir> [<ticket>]
 ```
 
-`<PREFIX>` = un préfixe de la **table unifiée** (skill `malt-workflow-commons` § PRÉFIXES DE HEADER CMUX) : `MAIN | PLAN | IMPL | PIPE | MR | ASK | BLOCK | WAIT | CLEAN | END`.
+`<PREFIX>` = un préfixe de la **table unifiée** (skill `malt-workflow-commons` § PRÉFIXES DE HEADER CMUX) : `ORCH | PLAN | IMPL | PIPE | MR | ASK | BLOCK | WAIT | CLEAN | END | JUGE`. `ORCH` réservé à `/orchestrator` ; `[MAIN]` n'existe plus (refusé par le script).
 `<STATE>` ∈ `SPAWNED | IN_PROGRESS | MR_OPEN | MERGED | PLANNED | BLOCKED`.
 `<role>` (spawn, défaut `dev`) ∈ `dev | plan` — `dev` = enfant `/dev` (préambule cycle MR, reporte MR_OPEN/MERGED) ; `plan` = enfant `/plan` planificateur (préambule planning, reporte PLANNED, n'orchestre rien).
 `--terminal` (await, défaut `MERGED`) ∈ `MERGED | PLANNED` — état terminal attendu : `MERGED` pour un ticket `/dev`, `PLANNED` pour un ticket spike-plan.
@@ -143,7 +143,7 @@ Le résumé reste **identique** entre `PLAN` et `IMPL` ; seul le préfixe change
 
 ## Comportement
 
-1. Si `$ARGUMENTS` commence par un préfixe connu de la table unifiée (`MAIN`/`PLAN`/`IMPL`/`PIPE`/`MR`/`ASK`/`BLOCK`/`WAIT`/`CLEAN`/`END`) → `phase <PREFIX> "<reste>"`.
+1. Si `$ARGUMENTS` commence par un préfixe connu de la table unifiée (`ORCH`/`PLAN`/`IMPL`/`PIPE`/`MR`/`ASK`/`BLOCK`/`WAIT`/`CLEAN`/`END`/`JUGE`) → `phase <PREFIX> "<reste>"`.
 2. Sinon, si `$ARGUMENTS` = `get` → afficher la surface courante.
 3. Sinon → `set "<$ARGUMENTS>"` (titre libre).
 4. Sans argument : déduire le préfixe de la phase de workflow en cours et un résumé de 3-4 mots décrivant le travail réel.
