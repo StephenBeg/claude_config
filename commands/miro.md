@@ -1,6 +1,5 @@
 ---
-description: Crée des boards Miro propres via le MCP miro (DSL layout + diagrammes auto-layout) — texte centré, zéro chevauchement, respect des bornes de frame. S'auto-vérifie en relisant le board.
-allowed-tools: mcp__miro__layout_get_dsl, mcp__miro__layout_create, mcp__miro__layout_read, mcp__miro__layout_update, mcp__miro__diagram_get_dsl, mcp__miro__diagram_create, mcp__miro__board_create, mcp__miro__board_list_items, mcp__miro__context_get, mcp__miro__context_explore
+description: Cree, edite et lit des boards Miro via le MCP Miro : schemas lisibles, sans connecteurs croises ni chevauchement de texte, auto-verifies par screenshot avant livraison.
 ---
 
 Tu crées ou édites un board Miro **propre et lisible** via le MCP miro. Un board "joli" = grille régulière, texte centré, aucun chevauchement, tout dans les bornes, palette et typo cohérentes.

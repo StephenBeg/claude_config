@@ -1,6 +1,6 @@
 ---
 name: malt-prod-sql
-description: Interroger la base PostgreSQL Malt (prod ou integration, Cloud SQL) en LECTURE SEULE depuis le CLI, via le tunnel cloudflared `malt tunnel start pg-prod`. À charger dès qu'il faut lire une donnée réelle en base (debug, vérification d'un état, comptage, jointure) au lieu de demander à l'utilisateur de requêter pour Claude.
+description: Interroger la base PostgreSQL Malt (prod ou integration, Cloud SQL) en LECTURE SEULE via le tunnel cloudflared. A charger des qu'il faut lire une donnee reelle en base : debug, verification d'un etat, comptage, jointure.
 ---
 
 # malt-prod-sql — lecture SQL prod/integ en CLI

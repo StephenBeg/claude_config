@@ -22,13 +22,12 @@ input=$(cat)
 #   Les CHAÎNES CITÉES sont neutralisées : un `git commit -m "... glab mr create
 #   ..."` ou un heredoc qui *parle* d'une commande ne doit rien déclencher
 #   (faux positif observé). Seul le code shell nu est analysé.
-cmd=$(printf '%s' "$input" | python3 -c '
-import sys, json, re
+cmd=$(printf '%s' "$input" | python3 "$HOME/.claude/scripts/wf-normcmd.py" 2>/dev/null) || cmd=""
+cmd_raw=$(printf '%s' "$input" | python3 -c '
+import sys, json
 d = json.load(sys.stdin)
-c = ((d.get("tool_input") or {}).get("command", "")).replace("\n", " ")
-c = re.sub(r"\x27[^\x27]*\x27|\"[^\"]*\"", " Q ", c)   # vide le contenu des quotes
-print(c)
-' 2>/dev/null) || cmd=""
+print(((d.get("tool_input") or {}).get("command", "")).replace("\n", " "))
+' 2>/dev/null) || cmd_raw=""
 out=$(printf '%s' "$input" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
@@ -75,6 +74,46 @@ if invoked 'glab +mr +merge'; then
   $ST set merged=1
   "$TAB" phase CLEAN >/dev/null 2>&1
   note "MR MERGÉE -> il RESTE 3 obligations, dans cet ordre : (1) statut JIRA 'To Validate' ; (2) lancer /end (log du jour + tradeoffs en commentaire JIRA) ; (3) clean du worktree puis header [END]. Le hook Stop BLOQUERA la fin de tour tant que /end n'est pas écrit."
+fi
+
+# --------------------------------------------------------------------------- #
+# ENREGISTREMENTS POUR LES GATES — rien n'est déclaré par le LLM, tout est OBSERVÉ
+# dans la commande et sa sortie. Ces clés sont les préconditions lues par
+# gate-bash-git.sh (pre-push, mr-merge) et wf-stop-hook.sh.
+# --------------------------------------------------------------------------- #
+
+# Tests verts : exige une TÂCHE DE TEST dans la commande ET un succès dans la sortie.
+# (Un `BUILD SUCCESSFUL` de compilation ne prouve aucun test — mémoire :
+#  un vert Gradle exige des preuves cumulatives.)
+if printf '%s' "$cmd" | grep -Eq 'gradlew[^|]*(test|check)|pnpm[^|]*test|vitest|jest'; then
+  printf '%s' "$out" | grep -Eq 'BUILD SUCCESSFUL|[0-9]+ (tests? )?passed|Tests? passed|PASS ' \
+    && $ST set tests_green=1
+fi
+
+# Smoke-run observé en direct (hors subagent smoke-runner).
+printf '%s' "$out" | grep -Eq 'Started [A-Za-z]*Application in' && $ST set smoke_ok=1
+
+# Un commit PÉRIME le verdict du juge : il n'a pas vu ce code.
+if invoked 'git +commit'; then
+  $ST set judge_ok_pre_push=
+  note "COMMIT : verdict du juge remis à zéro (le juge n'a pas vu ce code). Un juge FRAIS est dû avant le 1er push — le gate pre-push le refusera sinon."
+fi
+
+# Rebase skip_ci=true : précondition du merge (inspecté sur la commande BRUTE,
+# l'URL vit entre quotes).
+printf '%s' "$cmd_raw" | grep -Eq 'merge_requests/[0-9]+/rebase' \
+  && printf '%s' "$cmd_raw" | grep -q 'skip_ci=true' \
+  && $ST set rebased_skipci=1
+
+# Push de ce tour : le hook Stop exige le BLOC DE CLÔTURE dans la réponse.
+invoked 'git +push' && $ST set pushed_turn=1
+
+# ANTI-VEILLE (CLAUDE.md) : un process long ne doit pas être coupé par la veille.
+# Le hook le fait LUI-MÊME au lieu de le rappeler — et vérifie d'abord qu'un
+# caffeinate ne tourne pas déjà.
+bg=$(printf '%s' "$input" | python3 -c 'import sys,json;print("1" if (json.load(sys.stdin).get("tool_input") or {}).get("run_in_background") else "")' 2>/dev/null) || bg=""
+if [[ -n "$bg" ]] || printf '%s' "$cmd" | grep -Eq 'until .*(sleep|glab|gradlew)'; then
+  pgrep -f 'caffeinate -di' >/dev/null 2>&1 || nohup caffeinate -di >/dev/null 2>&1 &
 fi
 
 if [[ ${#msgs[@]} -gt 0 ]]; then

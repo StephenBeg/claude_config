@@ -1,6 +1,6 @@
 ---
 name: judge
-description: JUGE — contrôle adverse RADICAL HONESTY, NEUTRE, en contexte frais, d'un travail (diff de dev/hotfix ou plan JIRA) contre sa consigne. Vérifie TOUT lui-même contre le réel (git diff, code path:line, tests exécutés, logs, pipeline) — jamais la mémoire. Rend un verdict OK | NEEDS_WORK + GAPS actionnables, et écrit son compte rendu dans le fichier de la surface. Un juge FRAIS par round.
+description: JUGE — controle adverse radical-honesty, neutre, en contexte frais, d'un diff ou d'un plan contre sa consigne. Verifie tout contre le reel (git diff, code path:line, tests executes, logs, pipeline), jamais la memoire. Rend un verdict OK ou NEEDS_WORK + GAPS actionnables. Un juge frais par round.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---

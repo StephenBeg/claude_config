@@ -1,6 +1,6 @@
 ---
 name: malt-netsuite-read
-description: Interroger NetSuite (prod ou sandbox) en LECTURE SEULE depuis le CLI, via SuiteQL, avec `~/.claude/scripts/malt-netsuite.py`. À charger dès qu'il faut vérifier l'état réel d'une donnée dans NetSuite — une facture a-t-elle été intégrée, avec quel statut/montant, un customer existe-t-il, un paiement est-il appliqué — au lieu de supposer ou de demander à l'utilisateur d'aller regarder dans l'UI.
+description: Interroger NetSuite (prod ou sandbox) en LECTURE SEULE via SuiteQL depuis le CLI (~/.claude/scripts/malt-netsuite.py). A charger des qu'il faut verifier l'etat reel d'une donnee dans NetSuite (facture integree, statut, montant, customer, paiement) au lieu de supposer.
 ---
 
 # malt-netsuite-read — lecture NetSuite en CLI

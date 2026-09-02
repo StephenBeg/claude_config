@@ -31,20 +31,42 @@ Pour chaque fichier modifié, inspecte :
 - **Lisibilité** : nommage confus, duplication évitable, complexité inutile
 - **Couverture** : comportements critiques sans test
 
-### 3. Commentaires inline
+### 3. Commentaires inline — STYLE OBLIGATOIRE
 
-Pour chaque finding significatif, poste un commentaire sur la ligne concernée :
+**Une seule phrase. Le constat, rien d'autre.** Tu écris comme l'utilisateur : un pair qui relit vite et pointe du doigt. Pas comme un rapport d'audit.
 
-Commentaire inline (ancré à une ligne du diff) via l'API discussions — il faut les 3 SHA :
+Le raisonnement qui t'a mené au finding reste **dans le chat**, pas sur la MR. L'auteur connaît son code : lui dire ce qui cloche suffit, il en déduit le pourquoi tout seul. Un commentaire long se fait répondre « that's quite a long/verbose comment » et noie les vrais problèmes.
+
+**Forme :**
+- 1 phrase, minuscule initiale, ton parlé. Une question directe (`amount ? should be currencyCode`) vaut mieux qu'une affirmation.
+- **Zéro** : préfixe de sévérité (🔴/🟡/🔵), titre en gras, liste à puces, section « Fix : », justification, paragraphe d'explication.
+- Le backtick pour tout identifiant. Deuxième proposition tolérée **seulement** si elle porte une preuve (`path:line`, valeur observée), jamais une explication.
+- Bloc `suggestion` GitLab dès qu'une correction tient sur les lignes visées — la suggestion PORTE le fix, la phrase se contente du constat.
+- La sévérité se lit à la nature du problème, pas à une étiquette. Si une seule phrase ne suffit pas à faire comprendre, c'est un point à porter dans la note de synthèse, pas un pavé inline.
+
+**Exemples calibrés** (tous réels, tous acceptés) :
+```
+amount ? should be currencyCode
+`hours` is ignored, it is hardcoded to 1
+the `= null` is still there, you removed it on `findAggregateIdWithPendingSimulation` instead
+most recent by what ? say executionDate, not occurredAt
+why not stub `findLast...` too ? it silently returns null here instead of throwing like the others
+```
+
+Contre-exemple à ne jamais produire : `🔴 BLOQUANT : the index does not serve the query.` suivi de trois paragraphes d'analyse et d'une section fix.
+
+Ne poste rien pour un détail stylistique sans impact.
+
+**Poster** (API discussions, il faut les 3 SHA — les prendre sur la **dernière** version, `mr view` peut servir une version périmée après un repush) :
 
 ```bash
-# récupérer base_sha / head_sha / start_sha
-glab mr view <iid> --output=json | grep -oP '"(base_sha|head_sha|start_sha)":\s*"\K[0-9a-f]{40}'
+glab api "projects/:id/merge_requests/<iid>/versions" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin)[0]; print(d['base_commit_sha'], d['head_commit_sha'], d['start_commit_sha'])"
 
 glab api --method POST "projects/:id/merge_requests/<iid>/discussions" \
   -H "Content-Type: application/json" --input - <<'JSON'
 {
-  "body": "<finding concis>\n\n```suggestion\n<correction optionnelle>\n```",
+  "body": "<une phrase>\n\n```suggestion\n<correction optionnelle>\n```",
   "position": {
     "position_type": "text",
     "base_sha": "<base>", "head_sha": "<head>", "start_sha": "<start>",
@@ -54,16 +76,16 @@ glab api --method POST "projects/:id/merge_requests/<iid>/discussions" \
 JSON
 ```
 
-Format finding :
-```
-🔴 BLOQUANT / 🟡 IMPORTANT / 🔵 SUGGESTION : <problème en une phrase>. <raison>. <correction proposée>.
-```
+Vérifier le `new_line` contre le **fichier réel** de la révision, jamais contre un comptage de hunk :
+`glab api "projects/:id/repository/files/<path-urlencodé>/raw?ref=<head_sha>" | grep -n "<ancre>"`.
 
-Ne poste pas de commentaire pour des détails stylistiques sans impact.
+Supprimer un de tes commentaires : `glab api --method DELETE "projects/:id/merge_requests/<iid>/discussions/<discussion_id>/notes/<note_id>"`.
 
 ### 4. Feedback de synthèse — FORMAT OBLIGATOIRE
 
-Le feedback (chat ET commentaire général posté via `glab mr note <iid> -m "<corps>"`) suit **toujours** cette structure, dans cet ordre :
+**Deux destinataires, deux longueurs.** La structure complète ci-dessous est pour **le chat** (l'utilisateur, qui veut le raisonnement). Ce qui est **posté sur la MR** est la version condensée décrite en fin de section — même verdict, mêmes findings, sans le narratif.
+
+Structure du feedback **en chat**, dans cet ordre :
 
 1. **Verdict binaire** : `✅ BONNE MR` ou `❌ MAUVAISE MR`. Un seul des deux, en tête, sans demi-mesure.
 2. **Tableau PROS / CONS** : un tableau à deux colonnes listant les points positifs et négatifs. Un côté peut être vide — on peut très bien avoir **que des PROS** ou **que des CONS**. Ne pas forcer d'équilibre artificiel. **Chaque CON doit être accompagné d'une suggestion de fix concrète** (comment le corriger) — pas seulement le constat du problème.
@@ -94,9 +116,31 @@ Règles :
 - Chaque affirmation de cohérence doit être **vérifiée contre le code réel** (déléguer l'exploration à un sous-agent si besoin), jamais supposée.
 - Les findings bloquants/importants détaillés vont en commentaires inline (section 3) ; le tableau PROS/CONS les résume.
 
-### 5. Clarté automatique
+**Version postée sur la MR** (`glab mr note create <iid> -m "<corps>"`) — quelques lignes, pas de tableau, pas de narratif :
 
-Abandonne caveman pour les commentaires postés sur la MR — écrire normalement pour que les autres reviewers comprennent sans contexte. Reprend caveman dans les réponses en chat.
+```
+Verdict en une ligne.
+
+<Ce qui bloque : 1 à 3 phrases max, une par problème, chacune renvoyant au commentaire inline qui le porte.>
+
+<Le reste, tout mineur : "N commentaires inline ci-dessus (<3-4 mots par point>)".>
+
+<État de la pipeline si pertinent.>
+```
+
+Le détail vit dans les commentaires inline. La note générale ne fait que hiérarchiser.
+
+### 5. Round de recheck
+
+Quand on te redemande une review après corrections : refetch le diff **et** les réponses de l'auteur (`notes?sort=asc`), puis poste une note courte structurée en trois temps — **corrigé** (une phrase de liste), **tu avais raison / j'avais tort** le cas échéant, **reste**. Ne repose pas les findings déjà clos, ne réécris pas la synthèse complète.
+
+Quand l'auteur réfute un finding avec un argument valable, le dire explicitement et retirer le finding — c'est plus utile qu'une défense. Vérifier son argument contre le code avant de céder comme avant d'insister.
+
+Si la pipeline est rouge, lire la vraie cause avant de la reporter (jobs enfants via `/bridges`, puis `trace`) : un `Quality Gate check timeout exceeded` alors que le trace conclut `quality gate status is OK` est un flake d'infra, pas un défaut de la MR — le signaler comme tel.
+
+### 6. Clarté automatique
+
+Abandonne caveman pour ce qui est posté sur la MR — écrire normalement, en **anglais**, pour que les autres reviewers comprennent sans contexte. « Normalement » veut dire lisible, pas verbeux : la contrainte d'une phrase de la section 3 reste prioritaire. Reprends caveman dans les réponses en chat.
 
 ## Limites
 

@@ -1,5 +1,5 @@
 ---
-description: WORKFLOW D'ORCHESTRATION — propriétaire UNIQUE du fan-out CMUX + cycle de vie des tickets d'un chantier planifié. Spawn un /dev (impl) ou /plan (spike) par ticket prêt, écoute les statuts, déclenche les dépendants, absorbe les tickets créés par les sous-plans (RESCAN JIRA), draine le DAG. Une seule surface orchestrateur par workspace. Déclenché par /plan au GO IMPLEMENTATION (ou lancé à la main avec EPIC/umbrella + STATUS_DIR).
+description: WORKFLOW D'ORCHESTRATION — proprietaire unique du fan-out CMUX et du cycle de vie des tickets d'un chantier planifie : spawn un /dev ou /plan par ticket pret, ecoute les statuts, declenche les dependants, draine le DAG. Une seule surface orchestrateur par workspace.
 ---
 
 ## Input
@@ -14,7 +14,7 @@ Si l'un manque : le demander à l'utilisateur avant tout spawn.
 
 **Invoquer le skill `malt-workflow-commons` EN PREMIER** — règles partagées : questions à choix, escalade archi, accès JIRA, préfixes CMUX, vérification des sources, vérification & boucles. Ce workflow y renvoie par nom de section. (`/orchestrator` n'a ni smoke-run, ni MR, ni TDD, ni livrable de dev : il ne code pas, il supervise.)
 
-**Invoquer aussi le skill `malt-surface-exchange`** — l'orchestrateur **possède les inbox d'échange** du workspace (un inbox par SURFACE) : il crée l'arbre du workflow (`_inbox/orchestrator.md`), crée+headerise l'inbox de chaque surface (le header EST le prompt de départ) et spawn les enfants (spawn = lien seul). **Il n'y a plus de surface juge ni d'inbox juge** : chaque surface lance elle-même un sous-agent `judge` frais à son checkpoint (§ LOOP JUGE) — aucun câblage de contrôle à faire (§ RÔLE DE L'ORCHESTRATEUR). Il ne recopie pas le protocole ; il l'applique.
+**Invoquer aussi le skill `malt-surface-exchange`** — l'orchestrateur **possède les inbox d'échange** du workspace (un inbox par SURFACE) : il crée l'arbre du workflow (`_inbox/orchestrator.md`), crée+headerise l'inbox de chaque surface (le header EST le prompt de départ) et spawn les enfants (spawn = lien seul). **Il n'y a plus de surface juge ni d'inbox juge** : chaque surface lance elle-même un sous-agent `judge` frais à son checkpoint (skill `malt-judge-loop`) — aucun câblage de contrôle à faire (§ RÔLE DE L'ORCHESTRATEUR). Il ne recopie pas le protocole ; il l'applique.
 
 ## RÈGLE ABSOLUE — ORCHESTRATEUR UNIQUE
 
@@ -57,7 +57,7 @@ Il existe **un seul processus orchestrateur par workspace CMUX**. Un `/plan` (ra
    À CHAQUE transition, report ton statut ET réveille l'orchestrateur (RÈGLE ABSOLUE — c'est ce qui fait avancer le DAG) :
      ~/.claude/scripts/cmux-tab.sh report --notify $ORCH_SURFACE $STATUS_DIR <T> <STATE> "<detail>"
    STATES dev: IN_PROGRESS|MR_OPEN|MERGED|BLOCKED — STATES plan: IN_PROGRESS|PLANNED|BLOCKED
-   Notifie chaque étape dans l'inbox orchestrateur: note --notify $ORCH_SURFACE "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:…" "<preuve>". Au checkpoint (dev=pre-push · plan=plan-gate), lance TOI-MÊME un sous-agent judge frais par round jusqu'au verdict OK, REPORT_FILE=$WF/<T>.md (skill malt-surface-exchange § LOOP JUGE). Worktree attendu (dev): ~/worktrees/malt/<T>.
+   Notifie chaque étape dans l'inbox orchestrateur: note --notify $ORCH_SURFACE "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:…" "<preuve>". Au checkpoint (dev=pre-push · plan=plan-gate), lance TOI-MÊME un sous-agent judge frais par round jusqu'au verdict OK, REPORT_FILE=$WF/<T>.md (skill `malt-judge-loop`). Worktree attendu (dev): ~/worktrees/malt/<T>.
    <le champ Prompt du ticket>
    # impl : "Ticket JIRA: <T>. Suis le WORKFLOW DE DEV."
    # spike: "Ticket JIRA: <T>. Lance /plan en mode enfant-orchestré."

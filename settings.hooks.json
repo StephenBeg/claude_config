@@ -20,6 +20,45 @@
           {
             "type": "command",
             "command": "/Users/stephenbegot/.claude/scripts/netsuite-write-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-bash-git.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-tmp.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-quiet-hours.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|mcp__notion__.*|mcp__.*[Aa]tlassian.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-external-lang.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-skills.sh"
           }
         ]
       }
@@ -31,6 +70,15 @@
           {
             "type": "command",
             "command": "/Users/stephenbegot/.claude/scripts/wf-bash-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/wf-record.sh"
           }
         ]
       }

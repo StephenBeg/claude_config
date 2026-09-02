@@ -1,6 +1,6 @@
 ---
 name: malt-workflow-commons
-description: Règles communes aux workflows /dev /plan /hotfix (source de vérité unique, dédupliquée). Contient — questions à choix de réponses, accès JIRA MCP/fallback, préfixes de header CMUX, vérification des sources contre le réel, vérification & boucles de contrôle, smoke-run local, /end avec MR (vérif pipeline), travail découvert en cours de route, livrable final. Invoquer en PREMIER dans /dev, /plan, /hotfix.
+description: Regles communes a /dev, /plan, /hotfix : questions a choix, escalade des decisions d'archi, acces JIRA, prefixes de header CMUX, verification des sources contre le reel, boucles de controle, smoke-run local, /end avec MR, travail decouvert, livrable final. A invoquer en PREMIER dans ces trois workflows.
 ---
 
 # Workflow commons — /dev · /plan · /hotfix
@@ -19,14 +19,21 @@ Quand un workflow pose une question à l'utilisateur **avec des choix de répons
   - ❌ « Faut-il router via `SyncCommandBus` ou appeler `NetsuiteRecordPusher` en direct ? »
   - ✅ « Quand un paiement arrive, on l'enregistre tout de suite au risque de rares doublons, ou on attend une confirmation (plus lent mais zéro doublon) ? »
 - **Explication AVANT les choix — obligatoire, en langage clair.** Avant les options, exposer le problème **point par point** : la situation, ce qui est en jeu **pour le produit/métier**, pourquoi la décision se pose, et pour **chaque option** sa conséquence concrète (avantage / coût / risque), sans jargon. But : que l'utilisateur comprenne l'enjeu réel et tranche en connaissance de cause — pas à l'aveugle, pas noyé sous la technique.
-- **Test avant d'envoyer** : « Un collègue non-développeur comprendrait-il la question et chaque option ? » Si non → reformuler en métier.
+- **GABARIT OBLIGATOIRE — la question se rédige DANS CET ORDRE, rien d'autre.** Toute question à choix qui ne suit pas ce gabarit est une violation : la réécrire avant d'envoyer.
+  1. **Situation** (2-3 phrases max) : ce qui se passe aujourd'hui, raconté à quelqu'un qui découvre le sujet. Zéro sigle, zéro nom de code.
+  2. **Le problème** (1-2 phrases) : qu'est-ce qui ne marche pas / qu'est-ce qui manque, en termes d'effet observable.
+  3. **Pourquoi je ne peux pas trancher seul** (1 phrase) : ce qui dépend d'un arbitrage produit/métier.
+  4. **Les options** : pour chacune → ce qu'on fait, ce que ça donne concrètement, ce que ça coûte. Une recommandation en 1re position avec `(Recommended)`.
+- **FILTRE ANTI-JARGON — passe obligatoire avant envoi.** Relire l'énoncé et **chaque** libellé/description d'option, et **supprimer ou traduire** : tout terme métier interne non universel (nom de domaine, de flag, de statut, de table, d'événement), tout sigle non développé, toute analogie ou métaphore, toute référence de code. **Un mot que l'utilisateur n'a pas lui-même employé dans la conversation et qui n'existe pas dans le français courant = à traduire ou à supprimer.** Si un concept interne est vraiment indispensable, le définir en une demi-phrase à sa première apparition.
+- **Interdits de forme** : pas d'analogie ni de métaphore (« c'est comme un facteur qui… ») — elles brouillent au lieu d'éclairer ; pas de « cf. », pas de renvoi à un ticket/fichier pour comprendre la question. La question doit être **autoportante**.
+- **Test avant d'envoyer** (les deux doivent passer) : (a) « Un collègue non-développeur, qui ne connaît pas ce chantier, comprendrait-il la situation, le problème et chaque option ? » (b) « Peut-il choisir sans rien aller lire ailleurs ? » Si l'un des deux est non → réécrire.
 - **INTERDICTION D'UTILISER CAVEMAN dans ce cas précis.** L'explication du problème ET les libellés/descriptions des choix sont rédigés en **prose normale, complète et claire**. Caveman reste actif pour tout le reste de la session — on ne le suspend QUE pour la formulation de la question et de ses options.
 
 ---
 
 ## § DÉCISIONS D'ARCHI & TRADEOFFS — ESCALADE OBLIGATOIRE (jamais décider seul)
 
-Défaut historique de Claude : **prendre trop de décisions d'archi et de tradeoffs seul**, puis les révéler après coup dans le livrable. **Ce comportement est INTERDIT.** Claude ne fait **AUCUN** choix d'architecture de sa propre initiative, et **escalade tout tradeoff différenciant AVANT de coder**, pas après.
+**Décider seul d'une archi ou d'un tradeoff, puis le révéler dans le livrable, est INTERDIT.** Claude ne fait **AUCUN** choix d'architecture de sa propre initiative, et **escalade tout tradeoff différenciant AVANT de coder**, pas après.
 
 ### Ce qui doit TOUJOURS être escaladé à l'utilisateur (STOPPER + demander avant d'agir)
 
@@ -79,7 +86,8 @@ Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilis
 - `git worktree add` → `[IMPL]`.
 - `glab mr merge` → `merged`, `[CLEAN]`, rappel des 3 obligations restantes.
 - **Réponse de l'utilisateur** → sortie automatique de `[ASK]`/`[BLOCK]`/`[WAIT]` vers la phase précédente. (Ne jamais laisser un `[ASK]` traîner : si la phase de retour n'est pas la bonne, en poser une explicitement.)
-- **Fin de tour** → **BLOQUÉE** tant qu'une MR mergée n'a pas son `/end` écrit dans le log du jour (vérifié dans le fichier, pas déclaré).
+- **Fin de tour** → **BLOQUÉE** tant qu'une MR mergée n'a pas son `/end` écrit dans le log du jour (vérifié dans le fichier, pas déclaré), tant qu'un push du tour n'a pas son **bloc de clôture** dans la réponse, tant que le ticket n'est pas en `To Validate`, et tant que le **LIVRABLE FINAL** (avec Tradeoffs) n'est pas rendu.
+- **Étapes du workflow REFUSÉES par un gate si sautées** (CLAUDE.md § GATES DÉTERMINISTES — table complète) : 1er push sans verdict juge `OK` / sans tests verts / sans smoke-run des services touchés · commit sans test dans l'index · MR sans reviewer/titre/label · merge sans `Approved` frais + pipeline verte + rebase `skip_ci` + `--squash` · écriture JIRA/GitLab/Notion en français · édition d'un fichier sans le skill de son domaine · réveil programmé en heures calmes. Le verdict du juge est **périmé par tout nouveau commit**.
 
 Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WAIT]`, `[END]`, le `topic`, et tout retour arrière métier (`[MR]` → `[IMPL]` sur request changes).
 
@@ -109,7 +117,7 @@ Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WA
   - ❌ `[IMPL] BILL-2607 impl`
   - ✅ `[IMPL] TRY PAR EVENTID`
 - **Spécificités par workflow** : `[ORCH]` = **`/orchestrator`** pendant tout le GO IMPLEMENTATION (il supervise le DAG / les spikes-plan) — **et lui seul**. `/plan` ne porte JAMAIS `[ORCH]` (il planifie en `[PLAN]`, attend en `[ASK]`, passe le relais à `/orchestrator`, puis `[END]`). `/dev`/`/hotfix` ne posent JAMAIS `[ORCH]` non plus, même s'ils orchestrent un sous-agent ponctuel — `[ORCH]` est réservé à la surface `/orchestrator`.
-- **`[JUGE]`** : posé par `/dev`/`/hotfix`/`/plan` (jamais `/orchestrator`) à chaque round de la LOOP JUGE (skill `malt-surface-exchange`), tant que le sous-agent `judge` tourne. Un nouveau round = repasser par `[JUGE]` à chaque fois (juge frais).
+- **`[JUGE]`** : posé par `/dev`/`/hotfix`/`/plan` (jamais `/orchestrator`) à chaque round de la LOOP JUGE (skill `malt-judge-loop`), tant que le sous-agent `judge` tourne. Un nouveau round = repasser par `[JUGE]` à chaque fois (juge frais).
 
 ---
 
@@ -131,9 +139,9 @@ Principe Anthropic : **donner à l'agent un moyen de vérifier son propre travai
 
 1. **Preuve, jamais affirmation.** Toute conclusion « c'est vert / c'est fixé / ça boote » DOIT citer une **sortie réelle** : output de test, exit code de build, log `Started …Application in`, ligne Sonar `règle fichier:ligne`, statut de pipeline, état JIRA. Jamais « les tests passent » sans la sortie. (superpowers:verification-before-completion.)
 2. **`/goal` — ligne d'arrivée mesurable et bornée.** Pour la vérif pré-livraison, poser un `/goal` explicite plutôt que juger à l'œil : un évaluateur re-teste la condition à chaque tour, l'agent boucle jusqu'à ce qu'elle tienne. Conditions typiques : 0 test en échec (modules touchés) ; service(s) touché(s) qui bootent ; 0 violation Sonar new-code + coverage ≥ 80 % ; scope = besoin du ticket, rien de plus. Pour `/orchestrator` : **DAG entièrement drainé** (toutes tâches `MERGED`, tous spikes-plan `PLANNED` avec leur sous-arbre `MERGED`, zéro orphelin au dernier RESCAN de l'umbrella). (`/plan`, lui, s'arrête au hand-off vers `/orchestrator` — il ne draine rien.) **Borne dure : ~6 tours max** — atteinte sans vert → surfacer (`[BLOCK]`), jamais d'acharnement.
-3. **LOOP JUGE en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (4 rounds max → escalade `[ASK]`). Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-surface-exchange` § LOOP JUGE. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
+3. **LOOP JUGE en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (borne dure par checkpoint, détail skill `malt-judge-loop` — 2 rounds pour `/dev`/`/hotfix`, 4 pour `/plan` → escalade `[ASK]`). Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-judge-loop`. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
    Dans les deux cas, le contrôleur ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) + les critères, et cherche à **réfuter** : requirement non couvert, cas limite sans test, effet de bord hors scope, bug introduit (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS**, pas des préférences de style. Traiter correctness/scope ; **ne pas sur-corriger** le reste. Alternative outillée : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
-   Un round `NEEDS_WORK` ne se traite jamais à moitié : le juge est déjà exhaustif en un seul passage, donc chaque GAP est fermé avec une **preuve rejouée** avant resoumission (skill `malt-surface-exchange` § LOOP JUGE) — sinon le round suivant retrouve du travail bâclé, pas de nouveaux problèmes.
+   Un round `NEEDS_WORK` ne se traite jamais à moitié : le juge est déjà exhaustif en un seul passage, donc chaque GAP est fermé avec une **preuve rejouée** avant resoumission (skill `malt-judge-loop`) — sinon le round suivant retrouve du travail bâclé, pas de nouveaux problèmes.
 4. **`/loop` — attente/polling auto-cadencé (option).** Pour surveiller un état externe qui évolue seul (pipeline CI, attente d'approbation `Approved`, `await` d'un DAG), `/loop` est l'alternative auto-cadencée aux réveils manuels. **Ne remplace PAS** la boucle `until` en background ni `ScheduleWakeup` : mécanismes équivalents. **L'outil `Monitor` reste INTERDIT** (un accord par événement bloque l'utilisateur). Intervalle calé sur la vitesse réelle de l'état surveillé (pipeline ~8 min → un check ~480 s, pas 8 checks de 60 s). **HEURES CALMES 20h–7h (CLAUDE.md) : ne JAMAIS programmer `/loop`/`ScheduleWakeup`/boucle `until` de suivi dans cette plage — vérifier `date +%H%M` avant, STOPPER NET si ∈ [2000,0659], consigner l'état, relance manuelle le matin.** Mécanique exacte de la boucle `until` (y compris le piège du process détaché qui ne notifie jamais) et son extension à l'attente d'`Approved` → skill `malt-pipeline-followup` § 3, seule source de vérité.
 5. **Explore → Plan → Code.** Séparer compréhension et exécution pour ne pas résoudre le mauvais problème. Utile quand l'approche est incertaine / multi-fichiers / code peu connu. **À sauter** si le diff tient en une phrase. Dans ces workflows, l'explore sert surtout à **vérifier le plan mâché (`Prompt`) contre le code réel** (§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL), pas à tout re-découvrir.
 

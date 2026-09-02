@@ -1,6 +1,6 @@
 ---
 name: malt-pipeline-followup
-description: Suivi de pipeline GitLab CI jusqu'au vert — lookup statut, pipelines parent-child (monorepo), diagnostic + fix + repush, intégration Sonar, conflits de rebase, boucle d'attente auto-cadencée, heures calmes. Source de vérité unique invoquée par /dev, /hotfix et malt-workflow-commons § /end AVEC MR — ne jamais recopier son contenu ailleurs, y renvoyer par le nom de section.
+description: Suivi de pipeline GitLab CI jusqu'au vert : lookup statut, pipelines parent-child du monorepo, diagnostic + fix + repush, integration Sonar, conflits de rebase, boucle d'attente, heures calmes. Source de verite unique invoquee par /dev, /hotfix et malt-workflow-commons.
 ---
 
 # Suivi de pipeline — /dev · /hotfix

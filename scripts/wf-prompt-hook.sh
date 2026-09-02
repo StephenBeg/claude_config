@@ -5,17 +5,21 @@
 #    répond, et le header reste bloqué sur la question. Or "l'utilisateur vient
 #    de répondre" EST un événement que le harness connaît. On sort donc de
 #    [ASK]/[BLOCK]/[WAIT] tout seul, en revenant à la phase mémorisée (prev_phase).
-# 2. DRIFT APRÈS COMPACTION. Le LLM perd la phase et le résumé, donc laisse le
+# 2. DISPATCHER DE WORKFLOW. CLAUDE.md impose de choisir le workflow AVANT toute
+#    action, et le signal est mécanique : un numéro de ticket JIRA en entrée -> /dev.
+#    Le rappel est donc posé par le harness, pas laissé à l'initiative du LLM.
+# 3. HEURES CALMES. « Vérifier date +%H%M avant de programmer » est un ordre que
+#    le LLM oublie : l'heure et l'état de la plage sont injectés, factuels.
+# 4. DRIFT APRÈS COMPACTION. Le LLM perd la phase et le résumé, donc laisse le
 #    header périmé. On réinjecte l'état à chaque tour : il survit au contexte.
 set -uo pipefail
 
 TAB="$HOME/.claude/scripts/cmux-tab.sh"
 ST="python3 $HOME/.claude/scripts/wf-state.py"
-cat >/dev/null  # payload non utilisé
+input=$(cat)
+prompt=$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("prompt","") or "")' 2>/dev/null) || prompt=""
 
 phase="$($ST get phase)"
-[[ -n "$phase" ]] || exit 0
-
 extra=""
 case "$phase" in
   ASK|BLOCK|WAIT)
@@ -26,6 +30,25 @@ case "$phase" in
     ;;
 esac
 
-state="$($TAB state show 2>/dev/null)"
-printf '%s' "${extra}ÉTAT DE WORKFLOW (persistant, survit à la compaction) : ${state}. Le header doit refléter ce que tu fais MAINTENANT — le poser via ~/.claude/scripts/cmux-tab.sh phase <PREFIX> \"<résumé>\" à chaque transition."
+state=""
+[[ -n "$phase" ]] && state="$($TAB state show 2>/dev/null)"
+
+# --- dispatcher : ticket JIRA en entrée -> /dev (CLAUDE.md § WORKFLOWS) -------
+ticket=$(printf '%s' "$prompt" | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b' | head -1)
+if [[ -n "$ticket" && -z "$($ST get ticket)" ]]; then
+  extra="${extra}DISPATCHER (CLAUDE.md § WORKFLOWS) : le prompt porte le ticket $ticket et aucun workflow n'est en cours sur cette surface -> lancer /dev (ticket JIRA en entrée = /dev, la consigne vit dans le champ Prompt customfield_11956). Besoin large sans ticket -> /plan ; bug signalé sans ticket -> /hotfix. Poser aussi le titre de session commençant par $ticket, et le sujet : cmux-tab.sh topic \"<3-4 mots>\". "
+fi
+
+# --- heures calmes : fait, pas rappel ---------------------------------------
+now="${WF_FAKE_HOUR:+${WF_FAKE_HOUR}h}"; now="${now:-$(date "+%H:%M")}"
+h="${WF_FAKE_HOUR:-$(date +%H)}"
+if [[ 10#$h -ge 20 || 10#$h -lt 7 ]]; then
+  extra="${extra}HEURES CALMES ACTIVES (il est $now, plage 20h00-07h00) : aucune ré-invocation de Claude — /loop, ScheduleWakeup, boucle until en background, spawn d'/orchestrator, smoke-run en boucle sont GELÉS (le gate quiet-hours les refusera). Travail synchrone demandé par l'utilisateur : autorisé. "
+fi
+
+if [[ -n "$state" ]]; then
+  printf '%s' "${extra}ÉTAT DE WORKFLOW (persistant, survit à la compaction) : ${state}. Le header doit refléter ce que tu fais MAINTENANT — le poser via ~/.claude/scripts/cmux-tab.sh phase <PREFIX> \"<résumé>\" à chaque transition."
+elif [[ -n "$extra" ]]; then
+  printf '%s' "$extra"
+fi
 exit 0

@@ -1,12 +1,6 @@
 ---
 name: daily
-description: >
-  Use to generate a Slack standup message from today's session log.
-  Reads /Users/stephenbegot/tmp/YYYY-MM-DD.md (created by /end) and formats
-  a Slack-ready standup with task-done, fire, and dart sections.
-  If the user provides a Slack message/thread, reply in that thread with ONLY
-  the "done" part.
-  Use when: writing standup, daily update, /daily.
+description: Genere un message de standup Slack depuis le log de session du jour (~/tmp/YYYY-MM-DD.md, ecrit par /end) : sections done, fire, dart. Si l'utilisateur fournit un message ou un thread Slack, y repondre avec la seule partie done. Declenche par : standup, daily update, /daily.
 ---
 
 Generates a Slack standup message from today's `/end` log.

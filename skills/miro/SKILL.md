@@ -1,6 +1,6 @@
 ---
 name: miro
-description: Use when creating, editing, or reading Miro boards/diagrams/schemas via the Miro MCP server (mcp__miro__*). Produces clean, readable schemas — no crossing connectors, no text overlap, centered/legible blocks — and self-verifies the rendered result with a screenshot subagent before declaring done.
+description: Cree, edite et lit des boards, diagrammes et schemas Miro via le MCP Miro (mcp__miro__*), avec auto-verification du rendu par screenshot.
 ---
 
 # Miro — écrire/lire des schémas propres et auto-vérifiés

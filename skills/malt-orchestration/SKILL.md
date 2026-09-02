@@ -1,6 +1,6 @@
 ---
 name: malt-orchestration
-description: Comment Claude travaille sur le repo Malt — orchestration par sous-agents (thread principal = orchestrateur, déléguer exploration/recherche/analyse, CONCLUSION pas dumps), dosage du model des sous-agents (haiku/sonnet/opus selon la difficulté réelle), gestion du contexte (/clear, /compact, /rewind), et état temporaire via fichiers de travail sous ~/tmp/scratch (JAMAIS /tmp, purgé par macOS). À charger quand on délègue à des sous-agents, qu'on dimensionne un model, qu'on gère le contexte, ou qu'on transite de gros volumes entre étapes.
+description: Comment Claude travaille sur le repo Malt : deleguer a des sous-agents (conclusion, pas de dumps), dimensionner leur model (haiku/sonnet/opus), gerer le contexte (/clear, /compact, /rewind), transiter des fichiers de travail sous ~/tmp/scratch (jamais /tmp).
 ---
 
 # Orchestration & contexte — repo Malt

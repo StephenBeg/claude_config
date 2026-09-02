@@ -1,3 +1,7 @@
+---
+description: Interagit avec JIRA via l'API REST Atlassian v3 (curl + Basic auth) — lire un ticket, creer, commenter, transitionner un statut, assigner, poser des labels, lier des dependances. Fallback utilise tant que le MCP Atlassian est casse. A charger des qu'un workflow touche a JIRA.
+---
+
 Interact with Jira via the **Atlassian REST API v3** (curl + Basic auth). Fallback used while the Atlassian MCP is broken (Confluence-scope issue).
 
 `$ARGUMENTS` = free-form request (e.g. `read SM-1507`, `comment SM-1507 "..."`, `transition SM-1507 to In Progress`, `create bug in SM project ...`). Interpret the intent, run the matching recipe below, report the result. Reply in French (caveman) unless asked otherwise. All text WRITTEN to Jira (summaries, descriptions, comments) MUST be in **English**.

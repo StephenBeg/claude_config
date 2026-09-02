@@ -1,6 +1,6 @@
 ---
 name: malt-squad-conventions
-description: Conventions de squad Malt appliquées par /dev /plan /hotfix — labels JIRA et GitLab obligatoires, EPIC/domaine par défaut. Squad courante = Accounting/Bookkeeping. À charger dès qu'un workflow crée un ticket JIRA ou une MR (pour poser les bons labels). Changer de squad = éditer CE seul fichier ; les workflows restent inchangés.
+description: Conventions de squad Malt : labels JIRA et GitLab obligatoires, EPIC et domaine par defaut. A charger des qu'un workflow cree un ticket JIRA ou une MR. Squad courante = Accounting/Bookkeeping.
 ---
 
 # Conventions de squad — courante : **Accounting / Bookkeeping**
