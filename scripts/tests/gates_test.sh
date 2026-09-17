@@ -42,6 +42,8 @@ t "push depuis master"                        2 gate-bash-git.sh "$(pay Bash "$M
 t "worktree hors ~/worktrees/malt"            2 gate-bash-git.sh "$(pay Bash "$MAIN_REPO" "command=git worktree add /Users/x/wt -b t origin/master")"
 t "worktree sans base origin/master"          2 gate-bash-git.sh "$(pay Bash "$MAIN_REPO" "command=git worktree add $WT/T-1 -b t-desc")"
 t "worktree bien formé"                       0 gate-bash-git.sh "$(pay Bash "$MAIN_REPO" "command=git worktree add $WT/T-1 -b t-desc origin/master")"
+t "push depuis un repo perso (hors portée Malt)" 0 gate-bash-git.sh "$(pay Bash "$HOME/Documents/perso/portfolio" "command=git push origin main")"
+t "commit sans test hors portée Malt"          0 gate-bash-git.sh "$(pay Bash "$HOME/Documents/perso/portfolio" "command=git commit -m x")"
 t "commit avec Co-Authored-By"                2 gate-bash-git.sh "$(pay Bash "$HOME" "command=git commit -F msg.txt Co-Authored-By: Claude")"
 t "MR sans reviewer"                          2 gate-bash-git.sh "$(pay Bash "$HOME" "command=glab mr create --title X-1 Fix --label squad")"
 t "MR titre hors format"                      2 gate-bash-git.sh "$(pay Bash "$HOME" "command=glab mr create --title \"Fix rounding\" --reviewer stephen.begot --label squad")"
@@ -51,13 +53,13 @@ t "rebase sans skip_ci"                       2 gate-bash-git.sh "$(pay Bash "$H
 t "rebase avec skip_ci"                       0 gate-bash-git.sh "$(pay Bash "$HOME" "command=glab api --method PUT projects/x/merge_requests/12/rebase?skip_ci=true")"
 
 echo "== gate-bash-git : pre-push =="
-t "1er push sans juge"                        2 gate-bash-git.sh "$(pay Bash "$HOME" "command=git push -u origin HEAD")"
+t "1er push sans juge"                        2 gate-bash-git.sh "$(pay Bash "$WT/T-1" "command=git push -u origin HEAD")"
 $ST set judge_ok_pre_push=1
-t "1er push sans tests verts"                 2 gate-bash-git.sh "$(pay Bash "$HOME" "command=git push -u origin HEAD")"
+t "1er push sans tests verts"                 2 gate-bash-git.sh "$(pay Bash "$WT/T-1" "command=git push -u origin HEAD")"
 $ST set tests_green=1
-t "1er push avec juge + tests"                0 gate-bash-git.sh "$(pay Bash "$HOME" "command=git push -u origin HEAD")"
+t "1er push avec juge + tests"                0 gate-bash-git.sh "$(pay Bash "$WT/T-1" "command=git push -u origin HEAD")"
 $ST set mr=999
-t "repush avec MR existante"                  0 gate-bash-git.sh "$(pay Bash "$HOME" "command=git push --force-with-lease")"
+t "repush avec MR existante"                  0 gate-bash-git.sh "$(pay Bash "$WT/T-1" "command=git push --force-with-lease")"
 
 echo "== gate-bash-git : merge (fail closed) =="
 t "merge sans --squash"                       2 gate-bash-git.sh "$(pay Bash "$HOME" "command=glab mr merge 999 --remove-source-branch --yes")"

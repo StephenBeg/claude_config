@@ -17,6 +17,8 @@ Les workflows (`/dev`, `/plan`, `/hotfix`) sont **domain-agnostic** : ils lisent
 
 Ces deux labels sont **obligatoires** : une omission sort le ticket/la MR du radar de la squad. Les poser à la création, jamais après coup.
 
+**Le label ne suffit pas à faire apparaître un ticket sur les boards** : un ticket créé naît en `Selected for Development`, hors board. Il doit être passé en **`Ready`** juste après sa création — checklist complète : skill `malt-workflow-commons` § CRÉATION DE TICKET JIRA.
+
 ## EPIC / domaine par défaut
 
 - Domaine de code : `erp/*` (accounting + netsuite). Pour l'orientation technique → skill `malt-accounting-domain`.

@@ -10,7 +10,7 @@ La description du bug (symptôme observé, contexte, éventuel lien Datadog/Sent
 
 `/hotfix` **diagnostique d'abord** (analyse, sources vérifiées, cause racine), **crée son propre ticket bug**, puis **implémente de bout en bout** — avec un réordonnancement propre au hotfix : **la MR part au plus tôt** pour lancer la pipeline distante sans attendre la vérif locale lourde.
 
-**RÈGLES COMMUNES — invoquer le skill `malt-workflow-commons` EN PREMIER.** Il porte les règles partagées : **§ QUESTIONS À CHOIX DE RÉPONSES**, **§ DÉCISIONS D'ARCHI & TRADEOFFS — ESCALADE OBLIGATOIRE**, **§ ACCÈS JIRA**, **§ PRÉFIXES DE HEADER CMUX**, **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL**, **§ VÉRIFICATION & BOUCLES DE CONTRÔLE**, **§ SMOKE-RUN LOCAL**, **§ /end AVEC MR — VÉRIF PIPELINE**, **§ TRAVAIL DÉCOUVERT**, **§ LIVRABLE FINAL**. Ce workflow y renvoie par le nom de section. **Suivi de pipeline (step 7)** : skill `malt-pipeline-followup` (source de vérité unique dédiée).
+**RÈGLES COMMUNES — invoquer le skill `malt-workflow-commons` EN PREMIER.** Il porte les règles partagées : **§ QUESTIONS À CHOIX DE RÉPONSES**, **§ DÉCISIONS D'ARCHI & TRADEOFFS — ESCALADE OBLIGATOIRE**, **§ ACCÈS JIRA**, **§ CRÉATION DE TICKET JIRA**, **§ PRÉFIXES DE HEADER CMUX**, **§ DISCIPLINE DE COMMENTAIRE**, **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL**, **§ VÉRIFICATION & BOUCLES DE CONTRÔLE**, **§ SMOKE-RUN LOCAL**, **§ /end AVEC MR — VÉRIF PIPELINE**, **§ TRAVAIL DÉCOUVERT**, **§ LIVRABLE FINAL**. Ce workflow y renvoie par le nom de section. **Suivi de pipeline (step 7)** : skill `malt-pipeline-followup` (source de vérité unique dédiée).
 
 **ESCALADE ARCHI — RÈGLE ABSOLUE POUR CE HOTFIX.** Un hotfix corrige LE bug, borné et minimal (pas de refacto). Si le fix « propre » exige une **décision d'archi** (nouveau pattern, changement de contrat/schéma, dépendance) ou expose un **tradeoff différenciant** (ex : fix minimal qui masque vs fix structurel qui change le comportement) → **STOPPER et escalader à l'utilisateur** (§ DÉCISIONS D'ARCHI & TRADEOFFS) avant de coder. Ne jamais choisir seul l'ampleur du fix quand elle change le résultat.
 
@@ -42,12 +42,13 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
 
 ## PHASE 2 — CRÉATION DU TICKET BUG + IMPLÉMENTATION
 
-6. **Créer le ticket BUG — demander OÙ (RÈGLE ABSOLUE).** `/hotfix` crée lui-même son ticket, mais l'emplacement est une décision utilisateur :
+6. **Créer le ticket BUG — demander OÙ (RÈGLE ABSOLUE).** `/hotfix` crée lui-même son ticket, mais l'emplacement est une décision utilisateur. **Checklist de création = commons § CRÉATION DE TICKET JIRA** (dont le passage en `Ready`, non négociable) :
    - **Demander à l'utilisateur** (question à choix, skill commons § QUESTIONS À CHOIX) : sous quelle **EPIC / User Story parapluie** rattacher le bug, ou projet + type par défaut. Proposer un défaut sensé (ex : EPIC du domaine touché), l'utilisateur tranche.
    - **Type `Bug`** si disponible, sinon `Task` avec titre préfixé `[BUG]`.
    - **Titre + Description en ANGLAIS**, point de vue métier/reproductible : symptôme, étapes de repro, comportement attendu, cause racine (résumé), impact. Mise en forme propre, lisible par un non-technique.
    - **Champ "Prompt" (`customfield_11956`) = la consigne de fix, EN FRANÇAIS** (cf. `[[reference_jira_prompt_field]]`) : cause racine avec `path:line`, fix exact, cas de test attendus (dont un test qui reproduit le bug d'abord), pièges. Écriture ADF via API REST (skill `/jira`).
    - **Label JIRA de squad obligatoire à la création** (skill `malt-squad-conventions`).
+   - **Statut → `Ready` immédiatement après la création, et vérifié** (commons § CRÉATION DE TICKET JIRA) : un ticket bug laissé en `Selected for Development` **n'apparaît sur aucun board**. Il repassera `In Progress` au step 7a.
    - **NE PAS assigner à la création.** L'assignation à `stephen.begot` intervient au step 7a (passage `In Progress`), quand le dev démarre.
    - Récupérer le **numéro de ticket** créé — il pilote tout le reste (titre de session, MR, statuts).
 
@@ -78,6 +79,7 @@ Un `/hotfix` corrige **LE bug diagnostiqué, rien d'autre**. Pas de refacto, pas
 
 ## Rappels transverses (voir CLAUDE.md et skill `malt-workflow-commons`)
 
+- **DISCIPLINE DE COMMENTAIRE** (skill commons § DISCIPLINE DE COMMENTAIRE) : défaut = aucun commentaire ; plafond dur 1-2 lignes ; jamais d'explication métier (elle vit dans JIRA), jamais de récit de ticket ni de reformulation du nom. Le raisonnement va dans la description de MR et le commentaire JIRA de tradeoffs, pas dans le source. Relire les `+` de commentaire du diff avant de pousser.
 - **systematic-debugging AVANT tout fix** : cause racine identifiée + vérifiée contre le réel avant de coder.
 - **ORCHESTRATION PAR SOUS-AGENTS** (skill `malt-orchestration`) : déléguer exploration/diagnostic ; CONCLUSION pas dumps ; dimensionner le model.
 - **COUVERTURE DE CODE** : un test qui reproduit le bug (rouge→vert) ; toute ligne touchée couverte ; vert obligatoire avant de déclarer terminé.

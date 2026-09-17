@@ -65,6 +65,18 @@ curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issue" -d "{
 Discover valid project keys / issue types / required fields first:
 `curl -s "${AUTH[@]}" "$API/issue/createmeta?projectKeys=SM&expand=projects.issuetypes.fields"`
 
+**A created issue is NOT visible on the squad boards yet — RÈGLE ABSOLUE.** `POST /issue` lands in the workflow's initial status **`Selected for Development`** (verified 2026-09-09 on BILL-3587 / BILL-3590: no status entry in their changelog), which the squad boards do not display. **Always transition the new issue to `Ready` right after creating it**, then re-read `fields=status` to confirm. There is **no `To Do` / `Open` status** in this workflow — the transition *named* `To Do` leads to `Scoped`, which is not `Ready`.
+
+```sh
+KEY=$(curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issue" -d "$PAYLOAD" | python3 -c 'import sys,json;print(json.load(sys.stdin)["key"])')
+TID=$(curl -s "${AUTH[@]}" "$API/issue/$KEY/transitions" \
+  | python3 -c 'import sys,json;[print(t["id"]) for t in json.load(sys.stdin)["transitions"] if t["name"].lower()=="ready"]')
+curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issue/$KEY/transitions" -d "{\"transition\":{\"id\":\"$TID\"}}"   # 204
+curl -s "${AUTH[@]}" "$API/issue/$KEY?fields=status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["fields"]["status"]["name"])'   # -> Ready
+```
+
+Full creation checklist (parent, English text, French `Prompt` field, squad label, dependency links, no assignee, `Ready`): skill `malt-workflow-commons` § CRÉATION DE TICKET JIRA.
+
 ### Edit fields
 ```sh
 curl -s "${AUTH[@]}" "${JSON[@]}" -X PUT "$API/issue/SM-1507" -d "{
@@ -73,7 +85,7 @@ curl -s "${AUTH[@]}" "${JSON[@]}" -X PUT "$API/issue/SM-1507" -d "{
 ```
 
 ### Change status (transition)
-Transitions are per-workflow; look up the id first, then apply.
+Transitions are per-workflow; look up the id first, then apply. Statuses on project `BILL` (verified 2026-09-09): `Selected for Development` (creation default) · `Scoped` · `Ready` · `In Progress` · `Review` · `To Validate` · `To deploy` · `Blocked` · `Done` · `Closed / Not done`. `Ready` is transition id `191` on BILL, but **resolve by name** — ids differ per project and issue type.
 ```sh
 curl -s "${AUTH[@]}" "$API/issue/SM-1507/transitions"   # -> list of {id, name}
 curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issue/SM-1507/transitions" \

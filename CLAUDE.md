@@ -53,6 +53,8 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 | `skill-required` | éditer un `.vue`, un test, un contrat d'API, une migration, `erp/accounting*` sans avoir chargé le skill du domaine |
 | `preanalysis` *(warn)* | explorer le monorepo sans pré-analyse (skill `malt-accounting-domain` ou note Obsidian) |
 
+**Portée — les gates de workflow ne valent QUE dans le monorepo Malt** (`~/Documents/projects/malt` et `~/worktrees/malt/*`) : `master-write`, `master-push`, `worktree-form`, `coverage`, `pre-push` — donc aussi le juge, qui n'est exigé que par `pre-push`. Dans un repo perso (portfolio, side projects) ils se taisent : commit et push directs, sans juge ni worktree. Restent globaux, parce qu'ils ne dépendent d'aucun répertoire : `coauthor`, les gates GitLab (`mr-create`, `rebase-skipci`, `mr-merge`) et l'hygiène (`tmp-ban`, `quiet-hours`, `external-lang`, `skill-required`).
+
 **Cran par gate** : `~/.claude/wf-gates.conf` → `<gate> = block|warn|off`, relu à chaque appel. Un préfixe d'environnement sur une commande **ne parvient pas** au hook (process séparé) : pour lever un gate, éditer cette ligne. Kill switch de session : `WF_GATES_OFF=1` exporté **avant** de lancer Claude Code.
 
 **Ce que les gates LISENT pour décider** (écrit par les hooks `PostToolUse`, jamais déclaré) : verdict de juge (`VERDICT: OK` dans la réponse du sous-agent), `BOOTED_OK`/`Started …Application in`, sortie verte d'un run de tests, `skip_ci=true` d'un rebase, skills chargés, push du tour. Un `git commit` **périme** le verdict du juge. Scripts : `~/.claude/scripts/gate-*.sh`, `wf-record.sh` · tests : `~/.claude/scripts/tests/{gates,hooks}_test.sh`.
@@ -60,6 +62,14 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 ## COUVERTURE DE CODE — RÈGLE ABSOLUE
 
 **Toute ligne ajoutée ou modifiée doit être couverte par un test.** Nouveau comportement → TDD (`malt-backend-tdd`) ; code déjà écrit → `malt-test-coverage`. Avant de déclarer terminé : lancer les tests concernés, vert obligatoire, **citer la sortie**. Exceptions : code généré, config triviale, logs purs. Doute → couvrir.
+
+## COMMENTAIRES DANS LE CODE — RÈGLE ABSOLUE
+
+**Défaut = aucun commentaire. Plafond dur = 1 à 2 lignes.** Le nom, le test et le ticket JIRA portent l'explication ; le raisonnement va dans la description de MR et le commentaire JIRA de tradeoffs, jamais dans le fichier source. Un LLM qui vient de raisonner longuement a une pulsion forte de déverser ce raisonnement en KDoc — c'est le mode d'échec par défaut.
+
+Un commentaire ne survit que s'il porte un fait **impossible à lire dans le code** dont l'ignorance ferait commettre une erreur : piège/invariant non évident, contrainte externe (quirk NetSuite, legacy, ordre, unité), « pourquoi PAS la solution évidente », `TODO`/`FIXME`, directives outillage (`ktlint-disable`, `language=SQL`, `eslint-disable`, licence).
+
+Supprimer à vue : reformulation d'un nom, explication métier (elle vit dans JIRA), récit de ticket ou d'historique, énumération d'appelants, renvoi au KDoc d'une autre classe, titres markdown dans un commentaire, `@param`/`@return` qui répètent le type, `// given`/`// when`/`// then`, code commenté. **Raccourcir ≠ résumer** : garder le seul fait non lisible, sinon supprimer tout le bloc. Détail : `malt-workflow-commons` § DISCIPLINE DE COMMENTAIRE.
 
 ## GIT WORKFLOW — RÈGLE ABSOLUE
 

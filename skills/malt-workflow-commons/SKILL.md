@@ -1,6 +1,6 @@
 ---
 name: malt-workflow-commons
-description: Regles communes a /dev, /plan, /hotfix : questions a choix, escalade des decisions d'archi, acces JIRA, prefixes de header CMUX, verification des sources contre le reel, boucles de controle, smoke-run local, /end avec MR, travail decouvert, livrable final. A invoquer en PREMIER dans ces trois workflows.
+description: Regles communes a /dev, /plan, /hotfix : questions a choix, escalade des decisions d'archi, acces JIRA, creation de ticket JIRA (statut Ready obligatoire), prefixes de header CMUX, verification des sources contre le reel, boucles de controle, smoke-run local, /end avec MR, travail decouvert, livrable final. A invoquer en PREMIER dans ces trois workflows.
 ---
 
 # Workflow commons — /dev · /plan · /hotfix
@@ -68,6 +68,35 @@ curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" "$ATLASSIAN_SITE/rest/api/3/m
 
 ---
 
+## § CRÉATION DE TICKET JIRA — CHECKLIST
+
+Toute création de ticket par un workflow — `/plan` (User Story parapluie, SPIKE, tâches), `/hotfix` (ticket bug), `/dev` (ticket manquant), § TRAVAIL DÉCOUVERT — suit cette checklist. **Source de vérité UNIQUE** : les commandes y renvoient par le nom de section, elles ne la recopient pas. Mécanique d'appel = skill `/jira` (MCP sinon REST, cf. § ACCÈS JIRA).
+
+1. **Parent** — champ `parent` posé (EPIC → Story → Task/Sub-task). EPIC jamais devinée : la demander (§ QUESTIONS À CHOIX).
+2. **Titre + description en ANGLAIS**, point de vue métier, lisibles par un non-technique. La description N'EST PAS le prompt.
+3. **Champ `Prompt` (`customfield_11956`) en FRANÇAIS** = consigne d'implémentation (ADF), avec `DEPENDS_ON:` et le mode de lancement (`lance /dev` ou `lance /plan`).
+4. **Label de squad dès la création** (skill `malt-squad-conventions`).
+5. **Liens `is blocked by`** pour chaque arête du DAG.
+6. **NE PAS assigner à la création** — l'assignation à `stephen.begot` a lieu au passage `In Progress` par le dev qui implémente.
+7. **STATUT → `Ready` IMMÉDIATEMENT APRÈS LA CRÉATION — RÈGLE ABSOLUE.** Un `POST /issue` naît en **`Selected for Development`** (statut initial du workflow JIRA — vérifié le 2026-09-09 sur BILL-3587 et BILL-3590 : aucune transition de statut dans leur changelog), et **ce statut n'apparaît pas sur les boards de la squad** : le ticket existe mais reste invisible, donc jamais pris. **La création n'est TERMINÉE qu'une fois le ticket passé en `Ready`.**
+   - **Aucun statut `To Do` / `Open` n'existe** dans ce workflow — piège : il y a une *transition* nommée `To Do`, mais elle mène à `Scoped`, qui n'est pas `Ready`.
+   - **Exception unique** : le SPIKE de planification de `/plan`, qui part directement en `In Progress` (déjà visible sur le board).
+   - Transition = plomberie mécanique → **déléguer en `haiku`** (§ ACCÈS JIRA).
+
+```
+# `Ready` = transition 191 sur BILL — résoudre par NOM (l'id varie par projet/type d'issue)
+TID=$(curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" "$ATLASSIAN_SITE/rest/api/3/issue/<TICKET>/transitions" \
+  | python3 -c 'import sys,json;[print(t["id"]) for t in json.load(sys.stdin)["transitions"] if t["name"].lower()=="ready"]')
+curl -s -u "$ATLASSIAN_EMAIL:$ATLASSIAN_API_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ATLASSIAN_SITE/rest/api/3/issue/<TICKET>/transitions" -d "{\"transition\":{\"id\":\"$TID\"}}"   # 204
+```
+
+8. **VÉRIFIER, jamais déclarer** — relire le statut (`GET /issue/<TICKET>?fields=status`) et **citer `Ready`**. Un `POST /transitions` en 4xx ou un statut resté `Selected for Development` = ticket hors board : la création n'est pas faite, ne pas passer à la suite.
+
+**Statuts du workflow** (projet BILL, vérifié 2026-09-09) : `Selected for Development` · `Scoped` · `Ready` · `In Progress` · `Review` · `To Validate` · `To deploy` · `Blocked` · `Done` · `Closed / Not done`.
+
+---
+
 ## § PRÉFIXES DE HEADER CMUX — TABLE UNIFIÉE
 
 Mettre à jour le titre de l'onglet cmux **de Claude** (jamais celui de l'utilisateur ; cible via `CMUX_SURFACE_ID`) **dès qu'un changement d'état survient** :
@@ -118,6 +147,40 @@ Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WA
   - ✅ `[IMPL] TRY PAR EVENTID`
 - **Spécificités par workflow** : `[ORCH]` = **`/orchestrator`** pendant tout le GO IMPLEMENTATION (il supervise le DAG / les spikes-plan) — **et lui seul**. `/plan` ne porte JAMAIS `[ORCH]` (il planifie en `[PLAN]`, attend en `[ASK]`, passe le relais à `/orchestrator`, puis `[END]`). `/dev`/`/hotfix` ne posent JAMAIS `[ORCH]` non plus, même s'ils orchestrent un sous-agent ponctuel — `[ORCH]` est réservé à la surface `/orchestrator`.
 - **`[JUGE]`** : posé par `/dev`/`/hotfix`/`/plan` (jamais `/orchestrator`) à chaque round de la LOOP JUGE (skill `malt-judge-loop`), tant que le sous-agent `judge` tourne. Un nouveau round = repasser par `[JUGE]` à chaque fois (juge frais).
+
+---
+
+## § DISCIPLINE DE COMMENTAIRE — CODE PRODUIT (RÈGLE ABSOLUE)
+
+**Défaut = AUCUN commentaire.** Le code nommé correctement, le test, et le ticket JIRA portent l'explication. Un commentaire est une **exception justifiée**, jamais un réflexe de fin d'implémentation. Un LLM qui vient de raisonner longuement a une pulsion forte de déverser ce raisonnement en KDoc : c'est exactement ce qu'il ne faut pas faire. Le raisonnement va dans la **description de MR** et dans le **commentaire JIRA de tradeoffs**, pas dans le fichier source.
+
+**Plafond dur : 1 à 2 lignes.** Un commentaire de 3 lignes ou plus est un défaut, sans exception d'« ampleur du sujet ». Pas de titres markdown (`## Why this exists`), pas de listes à puces, pas de paragraphes.
+
+**Un commentaire ne survit que s'il porte un fait qu'on ne peut PAS lire dans le code** et dont l'ignorance ferait commettre une erreur :
+- un invariant ou un piège non évident (« `exists` avale un refus en `false` — utiliser `isPresent` ») ;
+- une contrainte externe que le code ne peut pas exprimer (quirk NetSuite, comportement legacy, ordre/concurrence, unité ou scale) ;
+- un « pourquoi PAS la solution évidente » qui empêche une modif plausible mais fausse ;
+- `TODO` / `FIXME`, message de `@Deprecated` ;
+- les **directives outillage**, jamais touchées : `ktlint-disable`, `noinspection`, `language=SQL`, `eslint-disable*`, `@ts-ignore`, `prettier-ignore`, en-têtes de licence.
+
+**Interdits, à supprimer à vue :**
+- toute reformulation du nom de la classe / méthode / propriété / test ;
+- toute **explication métier** — elle vit dans JIRA, pas dans le code ;
+- tout **récit de ticket** : « BILL-1234 — pourquoi on a fait ça », historique, « avant ce ticket… », « used to… », verdicts de revue, justifications de choix passés ;
+- toute **énumération d'appelants / d'émetteurs / de seams**, et tout renvoi au KDoc d'une autre classe ;
+- `NOTE:` / `IMPORTANT:` / « Companion to… » / essais de rationalisation ;
+- `@param` / `@return` / `@throws` qui ne font que répéter le nom ou le type ;
+- commentaire de fin de ligne qui paraphrase la ligne ;
+- `// given` / `// when` / `// then` et « ce test vérifie que… » quand le test se lit déjà ainsi ;
+- code commenté.
+
+**Raccourcir ≠ résumer.** On ne condense pas le paragraphe : on garde le SEUL fait non lisible dans le code et on jette le reste. S'il n'y en a aucun, on supprime tout le bloc.
+
+**Où ça mord dans les workflows :**
+- **Champ `Prompt` d'un ticket** (`/plan`, `/hotfix`) : ne jamais y demander « documenter le raisonnement en commentaire ». Le contexte du fix va dans le `Prompt`, pas en consigne d'écriture de KDoc.
+- **Sous-agent d'implémentation** (`malt-orchestration`) : la consigne de délégation rappelle ce plafond explicitement, sinon le sous-agent produit le déversement.
+- **Juge** (`malt-judge-loop`) : un diff qui ajoute un commentaire de ≥ 3 lignes, ou un commentaire qui répète le code / raconte le ticket, est un **GAP de scope** à remonter — au même titre qu'un effet de bord hors périmètre.
+- **Revue de son propre diff avant push** : relire les `+` de commentaire et supprimer tout ce qui ne passe pas la barre ci-dessus.
 
 ---
 
@@ -175,7 +238,7 @@ Quand `/end` est lancé **avec une MR**, avant de clore : **invoquer le skill `m
 
 Un workflow reste **focalisé sur SON périmètre**. S'il découvre du travail annexe (bug hors scope, dette, champ à revoir, question de cadrage), il **ne l'implémente pas en douce** et ne l'enfouit pas dans son commit :
 
-- **Créer un ticket JIRA dédié** (skill `/jira`) **sous le MÊME parapluie** (la User Story / umbrella parente, ou l'EPIC), pour que l'**orchestrateur de plan le capte à son RESCAN des enfants de l'umbrella**. Poser les liens de dépendance pertinents (`is blocked by`). **Label JIRA de squad obligatoire à la création** (skill `malt-squad-conventions`). **NE PAS assigner** le ticket à la création — l'assignation à `stephen.begot` n'a lieu qu'au démarrage du dev qui l'implémentera.
+- **Créer un ticket JIRA dédié** (skill `/jira`, checklist § CRÉATION DE TICKET JIRA — **statut `Ready` compris**) **sous le MÊME parapluie** (la User Story / umbrella parente, ou l'EPIC), pour que l'**orchestrateur de plan le capte à son RESCAN des enfants de l'umbrella**. Poser les liens de dépendance pertinents (`is blocked by`). **Label JIRA de squad obligatoire à la création** (skill `malt-squad-conventions`). **NE PAS assigner** le ticket à la création — l'assignation à `stephen.begot` n'a lieu qu'au démarrage du dev qui l'implémentera.
 - **CHOISIR LE TYPE correctement** : travail de **recherche / investigation / cadrage** → **SPIKE**, destiné à `/plan` (sous-plan récursif). Fix d'implémentation clair et borné → ticket d'implémentation → `/dev`. Rédiger la consigne dans le **champ "Prompt" (`customfield_11956`)** (jamais dans la description, qui reste métier et lisible), en indiquant explicitement `lance /plan` ou `lance /dev`.
 - **Signaler à l'orchestrateur** : en mode orchestré, mentionner le(s) ticket(s) créé(s) dans le `detail` du prochain `report` (et dans le livrable final). Ne jamais élargir silencieusement le périmètre de son propre ticket.
 - **Ne PAS orchestrer soi-même** ces tickets depuis un `/dev`/`/hotfix`/`/plan` : on crée et signale ; c'est **`/orchestrator` (l'orchestrateur unique)** qui les capte à son RESCAN de l'umbrella, les intègre au DAG et les lance. Un `/plan` enfant qui découvre du travail crée les tickets sous l'umbrella (avec liens) et les laisse à l'orchestrateur — il ne les lance jamais lui-même.

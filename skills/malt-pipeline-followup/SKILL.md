@@ -47,6 +47,17 @@ Intervalle calé sur la vitesse réelle de la pipeline surveillée (~8 min → c
 
 **Même mécanisme pour attendre le commentaire `Approved`** (pas seulement la pipeline) : une fois la pipeline verte, si `Approved` n'est pas encore là, relancer une boucle `until` (même paramètre `run_in_background: true`) qui poll `glab api "projects/:id/merge_requests/<IID>/notes"` jusqu'à trouver un commentaire de `stephen.begot` dont le corps vaut exactement `Approved` et dont `created_at` est postérieur au dernier repush — puis sortir. Ne jamais se contenter d'annoncer « j'attends ton retour » et rester passif sans boucle trackée : c'est la même faute que ne pas boucler sur la pipeline.
 
+**PLAFOND DE ~30 MIN SUR UN `run_in_background` (mesuré 2026-09-09, BILL-3589).** Le harness tue la
+commande de fond au bout d'une trentaine de minutes, quel que soit le `timeout` demandé (3600000 ms
+n'y change rien) : la notification arrive avec `status: killed`, pas `completed`. Une pipeline Malt
+dure ~25-45 min et une attente d'`Approved` peut durer des heures → **prévoir de RELANCER la boucle à
+chaque notification `killed`**, ce n'est pas un incident. Deux réflexes : (1) faire écrire un battement
+à chaque tour (`echo "poll $i ($(date +%H:%M))"`) pour distinguer « tué au bout de 30 min de travail
+utile » de « mort tout de suite », le fichier de sortie se lit avec l'outil **Read** (le gate `tmp-ban`
+refuse d'y toucher en Bash) ; (2) faire sortir la boucle sur `Approved` **ou** sur tout nouveau
+commentaire (comparer le nombre de notes non-`system` à celui déjà vu), sinon une question de reviewer
+attend 30 min de plus pour rien.
+
 **HEURES CALMES 20h–7h (CLAUDE.md) — RÈGLE ABSOLUE.** Avant de lancer/relancer une boucle `until` ou un `/loop`/`ScheduleWakeup` de suivi pipeline : `date +%H%M`. Si ∈ [2000,2359]∪[0000,0659] → **STOPPER NET**, ne rien programmer, consigner l'état (branche, MR+numéro, statut pipeline, où reprendre) en onglet `[WAIT]` (« paused — quiet hours »), relance **manuelle** le matin. Raison : boucles nocturnes ayant brûlé ~2M tokens à attendre une pipeline/`Approved` qui n'arrivent pas la nuit.
 
 **ANTI-VEILLE** : avant de lancer la boucle background, vérifier qu'un `caffeinate` ne tourne pas déjà (`pgrep -fl caffeinate`), sinon `nohup caffeinate -di >/dev/null 2>&1 &`.

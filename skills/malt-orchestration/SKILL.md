@@ -49,6 +49,8 @@ Chaque `Agent` créé DOIT dimensionner son `model` à la difficulté réelle �
 3. **Découper** si le diff couvre plusieurs zones indépendantes → un sous-agent par zone (parallèle, même message).
 4. **Opus reprend la main** pour vérifier (revue adverse, `/goal`, smoke-run) et arbitrer — jamais pour taper le code lui-même.
 
+**Le plan de délégation PORTE la discipline de commentaire, explicitement, à chaque fois** (skill `malt-workflow-commons` § DISCIPLINE DE COMMENTAIRE) : défaut = aucun commentaire, plafond dur 1-2 lignes, jamais d'explication métier ni de récit de ticket dans le source. Sans cette ligne dans le prompt, un sous-agent qui vient d'exécuter un plan détaillé déverse ce plan en KDoc — c'est le mode d'échec par défaut, pas un accident. Le contexte du plan reste dans le prompt et dans la description de MR, jamais recopié dans le fichier.
+
 **Garder sur Opus (NE PAS déléguer) :** le plan précis lui-même, le GATE liste-de-tests utilisateur, l'escalade archi/tradeoff, la revue adverse, la cause racine d'un bug tordu, et **l'implémentation réellement piégeuse** (invariants subtils, concurrence, event-sourcing non trivial) — là où un `sonnet` échouerait, cf. Dosage `opus`. Le critère de délégation = **exhaustif + déterministe** : si le plan est assez précis pour être exécuté mécaniquement, il DOIT partir en `sonnet`.
 
 **Défaut d'exécution = `sonnet`** (impl bornée et bien cadrée). `haiku` si purement mécanique (patch déjà spécifié à la ligne près). Remonter `opus` seulement si l'exécution révèle un piège que le plan n'avait pas tranché — et alors re-planifier, pas coder inline en douce.

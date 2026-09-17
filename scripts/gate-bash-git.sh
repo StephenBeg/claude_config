@@ -28,6 +28,20 @@ DIR="$(gate_effective_dir)"
 BR="$(gate_branch "$DIR")"
 
 # --------------------------------------------------------------------------- #
+# 0. PORTÉE — les gates liés à une copie de travail (push master, forme du
+#    worktree, couverture, pre-push) ne valent que dans le monorepo Malt et ses
+#    worktrees : ailleurs (repos perso, scratch) ils n'ont pas de sens. Les
+#    gates GitLab (mr-*, rebase) et coauthor restent globaux, eux ne dépendent
+#    d'aucun répertoire.
+# --------------------------------------------------------------------------- #
+in_malt_scope() {
+  case "$DIR" in
+    "$MAIN_REPO"|"$MAIN_REPO"/*|"$WT_ROOT"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# --------------------------------------------------------------------------- #
 # 1. Écriture Bash dans le repo principal alors qu'il est sur master
 # --------------------------------------------------------------------------- #
 in_main_repo() { case "$DIR" in "$MAIN_REPO"|"$MAIN_REPO"/*) return 0 ;; *) return 1 ;; esac; }
@@ -50,7 +64,7 @@ fi
 # --------------------------------------------------------------------------- #
 # 2. Push depuis master  /  push qui vise master
 # --------------------------------------------------------------------------- #
-if gate_invoked 'git +push'; then
+if in_malt_scope && gate_invoked 'git +push'; then
   if [[ "$BR" == "master" ]] || printf '%s' "$CMD_RAW" | grep -Eq 'git +push[^;&|]*(origin +master|HEAD:master|:master\b)'; then
     gate_deny master-push "push sur 'master' (branche courante « ${BR:-?} » dans $DIR). CLAUDE.md : jamais de push sur master — toujours branche + MR."
   fi
@@ -59,7 +73,7 @@ fi
 # --------------------------------------------------------------------------- #
 # 3. Forme du worktree
 # --------------------------------------------------------------------------- #
-if gate_invoked 'git +worktree +add'; then
+if in_malt_scope && gate_invoked 'git +worktree +add'; then
   tgt=$(printf '%s' "$CMD_RAW" | grep -oE 'worktree +add +(-[^ ]+ +)*[^ ]+' | sed -E 's/.*add +(-[^ ]+ +)*//' | tr -d "\"'")
   tgt="${tgt/#\~/$HOME}"
   case "$tgt" in
@@ -94,17 +108,22 @@ for line in sys.stdin:
     elif SRC.search(path) and a.isdigit() and int(a) > 0:
         added_src += 1
 print("NOTEST" if (added_src and not tests) else "OK")' 2>/dev/null)
-  [[ "$verdict" == "NOTEST" ]] && \
+  [[ "$verdict" == "NOTEST" ]] && in_malt_scope && \
     gate_deny coverage "l'index ajoute du code SOURCE et AUCUN fichier de test. CLAUDE.md § COUVERTURE DE CODE : toute ligne ajoutée ou modifiée doit être couverte par un test (nouveau comportement -> TDD skill malt-backend-tdd ; code déjà écrit -> skill malt-test-coverage). Vérifier l'index : git -C $DIR diff --cached --name-only. Exception réelle (code généré, config triviale, logs purs) : passer `coverage = warn` dans ~/.claude/wf-gates.conf le temps du commit."
 fi
 
 # --------------------------------------------------------------------------- #
 # 6. 1er push d'une branche : juge OK + tests verts + smoke-run
 # --------------------------------------------------------------------------- #
-if gate_invoked 'git +push' && [[ -z "$($ST get mr)" ]]; then
+if in_malt_scope && gate_invoked 'git +push' && [[ -z "$($ST get mr)" ]]; then
   [[ -n "$($ST get judge_ok_pre_push)" ]] || \
     gate_deny pre-push "1er push sans verdict de JUGE. /dev step 4 + skill malt-judge-loop : lancer un sous-agent judge FRAIS (Agent subagent_type=judge, CHECKPOINT=pre-push, run_in_background=false) et ne pousser QUE sur 'VERDICT: OK'. Le hook enregistre le verdict tout seul quand il le voit passer."
-  [[ -n "$($ST get tests_green)" ]] || \
+  # app-config n'a ni Gradle ni pnpm : le détecteur tests_green (wf-bash-hook.sh)
+  # ne peut jamais matcher, sa validation réelle est le job CI catalog-validator.
+  origin_url="$(cd "$DIR" 2>/dev/null && git config --get remote.origin.url 2>/dev/null)"
+  case "$origin_url" in *app-config*) tests_exempt=1 ;; *) tests_exempt="" ;; esac
+
+  [[ -n "$($ST get tests_green)" || -n "$tests_exempt" ]] || \
     gate_deny pre-push "1er push sans exécution de tests verte observée dans cette session. CLAUDE.md § COUVERTURE : lancer les tests des modules touchés et citer la sortie (BUILD SUCCESSFUL / Tests passed) avant de pousser."
 
   svc=$(cd "$DIR" 2>/dev/null && git diff --name-only origin/master...HEAD 2>/dev/null | python3 -c '
