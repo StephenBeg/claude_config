@@ -11,7 +11,7 @@ Procédure :
 - Lancer `./gradlew :<basename>:bootRun --args='--spring.profiles.active=dev'` en **`run_in_background: true`**.
   - **`<basename>` = basename du module, JAMAIS le chemin** : `:accounting-backend`, pas `:erp:accounting-backend` (le segment fait échouer la résolution).
 - Attendre l'état terminal via une **boucle `until`** qui grep le log jusqu'à voir :
-  - **succès** : `Started .*Application in`
+  - **succès** : `Started .*Application(Kt)? in` — le `Kt` est obligatoire dans le motif : les apps Kotlin loguent `Started AccountingApplicationKt in …`, qu'un motif `Application in` ne matche PAS
   - **échec** : `APPLICATION FAILED TO START` / `BUILD FAILED` / `BeanCreationException` / `UnsatisfiedDependency` / `NoResourceFoundException`
   - **JAMAIS l'outil `Monitor`.** Timeout raisonnable (~5 min).
 - **Frontière wiring vs env** : dès que le log atteint `HikariPool` / `Liquibase` / `Connection refused` / `jdbc` → le **wiring est OK** ; un échec après ce point = **env local** (non bloquant). Un crash de wiring Spring sort AVANT toute connexion DB/rabbit.
