@@ -50,8 +50,16 @@ case "$tool" in
     fi
 
     if [[ "$at" == "judge" ]] || printf '%s' "$pr" | grep -q 'CHECKPOINT='; then
+      # Ranger le verdict d'apres le CHECKPOINT DECLARE, jamais d'apres une
+      # sous-chaine du prompt : un juge pre-push qui MENTIONNE le gate amont
+      # (dev-plan-gate) etait classe en plan-gate -> push refuse a tort.
       plan_gate=0
-      printf '%s' "$pr" | grep -q 'plan-gate' && plan_gate=1
+      ckpt="$(printf '%s' "$pr" | sed -n 's/.*CHECKPOINT=\([a-z-]*\).*/\1/p' | head -1)"
+      case "$ckpt" in
+        plan-gate|dev-plan-gate|hotfix-plan-gate) plan_gate=1 ;;
+        pre-push|hotfix-verify)                   plan_gate=0 ;;
+        *) printf '%s' "$pr" | grep -q 'plan-gate' && plan_gate=1 ;;
+      esac
       if printf '%s' "$rs" | grep -Eq 'VERDICT:? *OK'; then
         if [[ $plan_gate -eq 1 ]]; then
           $ST set judge_ok_plan=1
@@ -63,7 +71,7 @@ case "$tool" in
       elif printf '%s' "$rs" | grep -Eq 'VERDICT:? *NEEDS_WORK'; then
         r="$($ST get judge_round)"; r="${r:-0}"
         $ST set "judge_round=$((r + 1))"
-        msgs+=("JUGE NEEDS_WORK (round $((r + 1))). RÈGLE ABSOLUE malt-judge-loop : pas de round N+1 sans PREUVE DE CLÔTURE PAR GAP — traiter toute l'étendue de chaque GAP (pas seulement l'exemple cité), appliquer le fix, REJOUER la preuve exacte que le GAP mettait en défaut (test cité vert avec sortie, ligne couverte, path:line dans le diff), et seulement ensuite lancer un juge NEUF. Borne : 2 rounds (/dev, /hotfix), 4 (/plan) -> ensuite [ASK].")
+        msgs+=("JUGE NEEDS_WORK (round $((r + 1))). RÈGLE ABSOLUE malt-judge-loop : pas de round N+1 sans PREUVE DE CLÔTURE PAR GAP — traiter toute l'étendue de chaque GAP (pas seulement l'exemple cité), appliquer le fix, produire la PREUVE LISIBLE que le GAP est clos (path:line du comportement metier desormais ecrit, nom du cas de test metier ajoute), et seulement ensuite lancer un juge NEUF. Le juge est METIER : un GAP de lint/style/commentaire/test rouge remonte par erreur ne se traite pas dans ce loop. Borne : 2 rounds (/dev, /hotfix), 4 (/plan) -> ensuite [ASK].")
       fi
     fi
     ;;

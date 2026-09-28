@@ -148,35 +148,12 @@ Restent donc **à la charge de la session** : `[PLAN]`, `[ASK]`, `[BLOCK]`, `[WA
 
 ## § DISCIPLINE DE COMMENTAIRE — CODE PRODUIT (RÈGLE ABSOLUE)
 
-**Défaut = AUCUN commentaire.** Le code nommé correctement, le test, et le ticket JIRA portent l'explication. Un commentaire est une **exception justifiée**, jamais un réflexe de fin d'implémentation. Un LLM qui vient de raisonner longuement a une pulsion forte de déverser ce raisonnement en KDoc : c'est exactement ce qu'il ne faut pas faire. Le raisonnement va dans la **description de MR** et dans le **commentaire JIRA de tradeoffs**, pas dans le fichier source.
+**Source de vérité : skill `claude-prose`** (défaut = aucun commentaire, plafond dur 1 à 2 lignes, liste des rares faits qui justifient un commentaire, interdits à supprimer à vue). Ne pas dupliquer ces règles ici : les charger.
 
-**Plafond dur : 1 à 2 lignes.** Un commentaire de 3 lignes ou plus est un défaut, sans exception d'« ampleur du sujet ». Pas de titres markdown (`## Why this exists`), pas de listes à puces, pas de paragraphes.
-
-**Un commentaire ne survit que s'il porte un fait qu'on ne peut PAS lire dans le code** et dont l'ignorance ferait commettre une erreur :
-- un invariant ou un piège non évident (« `exists` avale un refus en `false` — utiliser `isPresent` ») ;
-- une contrainte externe que le code ne peut pas exprimer (quirk NetSuite, comportement legacy, ordre/concurrence, unité ou scale) ;
-- un « pourquoi PAS la solution évidente » qui empêche une modif plausible mais fausse ;
-- `TODO` / `FIXME`, message de `@Deprecated` ;
-- les **directives outillage**, jamais touchées : `ktlint-disable`, `noinspection`, `language=SQL`, `eslint-disable*`, `@ts-ignore`, `prettier-ignore`, en-têtes de licence.
-
-**Interdits, à supprimer à vue :**
-- toute reformulation du nom de la classe / méthode / propriété / test ;
-- toute **explication métier** — elle vit dans JIRA, pas dans le code ;
-- tout **récit de ticket** : « BILL-1234 — pourquoi on a fait ça », historique, « avant ce ticket… », « used to… », verdicts de revue, justifications de choix passés ;
-- toute **énumération d'appelants / d'émetteurs / de seams**, et tout renvoi au KDoc d'une autre classe ;
-- `NOTE:` / `IMPORTANT:` / « Companion to… » / essais de rationalisation ;
-- `@param` / `@return` / `@throws` qui ne font que répéter le nom ou le type ;
-- commentaire de fin de ligne qui paraphrase la ligne ;
-- `// given` / `// when` / `// then` et « ce test vérifie que… » quand le test se lit déjà ainsi ;
-- code commenté.
-
-**Raccourcir ≠ résumer.** On ne condense pas le paragraphe : on garde le SEUL fait non lisible dans le code et on jette le reste. S'il n'y en a aucun, on supprime tout le bloc.
-
-**Où ça mord dans les workflows :**
+**Où ça mord dans ces workflows :**
+- **Revue de son propre diff avant push** : relire les lignes `+` de commentaire et supprimer tout ce qui ne passe pas la barre. **C'est la surface qui le fait — le juge ne contrôle PLUS la forme** (skill `malt-judge-loop` : périmètre métier uniquement).
 - **Champ `Prompt` d'un ticket** (`/plan`, `/hotfix`) : ne jamais y demander « documenter le raisonnement en commentaire ». Le contexte du fix va dans le `Prompt`, pas en consigne d'écriture de KDoc.
-- **Sous-agent d'implémentation** (`malt-orchestration`) : la consigne de délégation rappelle ce plafond explicitement, sinon le sous-agent produit le déversement.
-- **Juge** (`malt-judge-loop`) : un diff qui ajoute un commentaire de ≥ 3 lignes, ou un commentaire qui répète le code / raconte le ticket, est un **GAP de scope** à remonter — au même titre qu'un effet de bord hors périmètre.
-- **Revue de son propre diff avant push** : relire les `+` de commentaire et supprimer tout ce qui ne passe pas la barre ci-dessus.
+- **Sous-agent d'implémentation** (`malt-orchestration`) : la consigne de délégation rappelle le plafond explicitement, sinon le sous-agent produit le déversement.
 
 ---
 
@@ -198,9 +175,9 @@ Principe Anthropic : **donner à l'agent un moyen de vérifier son propre travai
 
 1. **Preuve, jamais affirmation.** Toute conclusion « c'est vert / c'est fixé / ça boote » DOIT citer une **sortie réelle** : output de test, exit code de build, log `Started …Application(Kt)? in`, ligne Sonar `règle fichier:ligne`, statut de pipeline, état JIRA. Jamais « les tests passent » sans la sortie. (superpowers:verification-before-completion.)
 2. **`/goal` — ligne d'arrivée mesurable et bornée.** Pour la vérif pré-livraison, poser un `/goal` explicite plutôt que juger à l'œil : un évaluateur re-teste la condition à chaque tour, l'agent boucle jusqu'à ce qu'elle tienne. Conditions typiques : 0 test en échec (modules touchés) ; service(s) touché(s) qui bootent ; 0 violation Sonar new-code + coverage ≥ 80 % ; scope = besoin du ticket, rien de plus. Pour `/orchestrator` : **DAG entièrement drainé** (toutes tâches `MERGED`, tous spikes-plan `PLANNED` avec leur sous-arbre `MERGED`, zéro orphelin au dernier RESCAN de l'umbrella). (`/plan`, lui, s'arrête au hand-off vers `/orchestrator` — il ne draine rien.) **Borne dure : ~6 tours max** — atteinte sans vert → surfacer (`[BLOCK]`), jamais d'acharnement.
-3. **LOOP JUGE en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (borne dure par checkpoint, détail skill `malt-judge-loop` — 2 rounds pour `/dev`/`/hotfix`, 4 pour `/plan` → escalade `[ASK]`). Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-judge-loop`. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
-   Dans les deux cas, le contrôleur ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) + les critères, et cherche à **réfuter** : requirement non couvert, cas limite sans test, effet de bord hors scope, bug introduit (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS**, pas des préférences de style. Traiter correctness/scope ; **ne pas sur-corriger** le reste. Alternative outillée : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
-   Un round `NEEDS_WORK` ne se traite jamais à moitié : le juge est déjà exhaustif en un seul passage, donc chaque GAP est fermé avec une **preuve rejouée** avant resoumission (skill `malt-judge-loop`) — sinon le round suivant retrouve du travail bâclé, pas de nouveaux problèmes.
+3. **LOOP JUGE MÉTIER en CONTEXTE FRAIS — solo comme orchestré.** Le juge ne tourne JAMAIS dans le contexte qui a écrit le code/le plan (biais). C'est un **sous-agent `judge`** (`.claude/agents/judge.md`, `opus`, read-only) lancé par la surface elle-même au checkpoint, **un juge NEUF à chaque round**, rebouclé jusqu'à ce qu'un juge rende `OK` (borne dure par checkpoint, détail skill `malt-judge-loop` — 2 rounds pour `/dev`/`/hotfix`, 4 pour `/plan` → escalade `[ASK]`). **Son périmètre est strictement MÉTIER** : besoin réellement couvert · meilleure solution ignorée · pièges du domaine · pertinence et exhaustivité des cas de test métier. **Jamais** de lint, style, nommage, commentaires, compilation, tests rouges, coverage chiffrée — ces défauts sont attrapés par les hooks, les gates et la pipeline ; **le juge ne lance ni build ni test**. Chaque juge écrit son **compte rendu** dans le fichier de la surface (`REPORT_FILE`) — trace auditable. Protocole complet : skill `malt-judge-loop`. Il n'existe **plus de surface `/judge`** ni d'inbox juge ; le subagent `reviewer` est remplacé par le juge à ces checkpoints.
+   Le contrôleur ne voit QUE le diff (ou le plan) + la consigne (`Prompt`) et cherche à **réfuter que le besoin est résolu** : exigence non satisfaite, cas métier sans test, piège du domaine ignoré, meilleure solution disponible (pour un plan : domaine/tâche/dépendance/contrat oublié). Retourne des **GAPS métier**, jamais de la forme. Alternative outillée pour la forme : skill `/code-review`. (Exploration : subagent **`explorer`** ; smoke-run : **`smoke-runner`**.)
+   Un round `NEEDS_WORK` ne se traite jamais à moitié : le juge est déjà exhaustif en un seul passage, donc chaque GAP est fermé avec une **preuve lisible** (`path:line` du comportement désormais écrit, nom du cas de test métier ajouté) avant resoumission (skill `malt-judge-loop`).
 4. **`/loop` — attente/polling auto-cadencé (option).** Pour surveiller un état externe qui évolue seul (pipeline CI, attente d'approbation `Approved`, `await` d'un DAG), `/loop` est l'alternative auto-cadencée aux réveils manuels. **Ne remplace PAS** la boucle `until` en background ni `ScheduleWakeup` : mécanismes équivalents. **L'outil `Monitor` reste INTERDIT** (un accord par événement bloque l'utilisateur). Intervalle calé sur la vitesse réelle de l'état surveillé (pipeline ~8 min → un check ~480 s, pas 8 checks de 60 s). **HEURES CALMES 20h–7h (CLAUDE.md) : ne JAMAIS programmer `/loop`/`ScheduleWakeup`/boucle `until` de suivi dans cette plage — vérifier `date +%H%M` avant, STOPPER NET si ∈ [2000,0659], consigner l'état, relance manuelle le matin.** Mécanique exacte de la boucle `until` (y compris le piège du process détaché qui ne notifie jamais) et son extension à l'attente d'`Approved` → skill `malt-pipeline-followup` § 3, seule source de vérité.
 5. **Explore → Plan → Code.** Séparer compréhension et exécution pour ne pas résoudre le mauvais problème. Utile quand l'approche est incertaine / multi-fichiers / code peu connu. **À sauter** si le diff tient en une phrase. Dans ces workflows, l'explore sert surtout à **vérifier le plan mâché (`Prompt`) contre le code réel** (§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL), pas à tout re-découvrir.
 

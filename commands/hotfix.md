@@ -36,7 +36,7 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
 4. **VÉRIFIER LES SOURCES CONTRE LE RÉEL** — suivre le skill commons **§ VÉRIFICATION DES SOURCES CONTRE LE RÉEL** : code réel sur `master` à jour (`git fetch origin master` depuis `~/Documents/projects/malt`, ne rien éditer sur master — GIT WORKFLOW) avec `path:line` du code courant ; runtime via Datadog (`/datadog`) ou Sentry (`/sentry-analyzer`) ; JIRA/FF/config = source vivante ; corriger la note Obsidian en cas de drift.
 5. **Cause racine confirmée — GATE.** Formuler explicitement : **le bug** (symptôme), **la cause racine** (`path:line` + pourquoi), **le fix envisagé** (borné, minimal — un hotfix corrige LE bug, pas de refacto). Plusieurs causes candidates ou fix non trivial → question à choix (skill commons § QUESTIONS À CHOIX). **Ne pas passer en Phase 2 tant que la cause racine n'est pas tenue.**
 
-5b. **GATE JUGE PRÉ-IMPL (OBLIGATOIRE, avant Phase 2)** — skill `malt-judge-loop`, `CHECKPOINT=hotfix-plan-gate`. Sous-agent `judge` frais sur la cause racine + le fix envisagé (pas encore de diff) : la cause racine est-elle la bonne, le fix est-il borné au bug et rien d'autre ? `NEEDS_WORK` → corriger puis **round 2 avec un juge NEUF** (2 rounds max). Toujours `NEEDS_WORK` au round 2 → `[ASK]`.
+5b. **GATE JUGE PRÉ-IMPL (OBLIGATOIRE, avant Phase 2)** — skill `malt-judge-loop`, `CHECKPOINT=hotfix-plan-gate`. Sous-agent `judge` **métier** frais sur la cause racine + le fix envisagé (pas encore de diff) : la cause racine est-elle la bonne, le fix est-il borné au bug et rien d'autre, y avait-il mieux à faire ? `NEEDS_WORK` → corriger puis **round 2 avec un juge NEUF** (2 rounds max). Toujours `NEEDS_WORK` au round 2 → `[ASK]`.
 
 ---
 
@@ -52,7 +52,7 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
    - **NE PAS assigner à la création.** L'assignation à `stephen.begot` intervient au step 7a (passage `In Progress`), quand le dev démarre.
    - Récupérer le **numéro de ticket** créé — il pilote tout le reste (titre de session, MR, statuts).
 
-7. **IMPLÉMENTATION — MR au plus tôt.** Le ticket bug créé à l'étape 6 est le ticket de travail.
+7. **IMPLÉMENTATION — MR au plus tôt.** *(Charger `claude-prose` avant la première écriture de code, et recopier sa règle dans le prompt de chaque sous-agent d'impl.)* Le ticket bug créé à l'étape 6 est le ticket de travail.
 
    **7a — MR AU PLUS TÔT (avant tests/build locaux lourds) :**
    - Worktree + branche (base `origin/master`, hors repo) — GIT WORKFLOW (CLAUDE.md).
@@ -62,7 +62,7 @@ Cœur qui distingue `/hotfix` d'un `/dev`. **Aucune correction ne démarre avant
 
    **7b — VÉRIFICATION LOCALE LOURDE, EN PARALLÈLE DE LA PIPELINE (après la MR) :**
    - Pendant que la pipeline tourne : lancer la **suite de tests complète des modules touchés + le build** localement, et le **SMOKE-RUN LOCAL** des services touchés (skill commons § SMOKE-RUN LOCAL).
-   - **`/goal` borné + LOOP JUGE** (skill commons § VÉRIFICATION & BOUCLES, leviers 2-3) : `/goal` sur 0 test en échec + service qui boote + scope = LE bug et rien d'autre, borne ~6 tours ; puis **LOOP JUGE — obligatoire, solo comme orchestré** (skill `malt-judge-loop`) : lancer un sous-agent **`judge`** frais (`CHECKPOINT=hotfix-verify`, `ROUND=N`, worktree/branche, `REPORT_FILE=<SURFACE_FILE>` — en solo `/Users/stephenbegot/claude-exchange-llm/_solo/<TICKET>.md`, consigne du fix + cause racine, ce que je prétends avoir fait). Le juge contrôle : le fix corrige-t-il vraiment la cause racine ? test qui reproduit le bug ? cas limite ? effet de bord ? **Un juge NEUF par round**, jusqu'à `OK` (**2 rounds max ici** — le gate `hotfix-plan-gate` du step 5b a déjà filtré la cause racine/le scope en amont → `[ASK]` si toujours `NEEDS_WORK` au round 2). Traiter correctness/scope, ne pas sur-corriger. Ne JAMAIS juger dans le contexte qui a écrit le fix.
+   - **`/goal` borné + LOOP JUGE** (skill commons § VÉRIFICATION & BOUCLES, leviers 2-3) : `/goal` sur 0 test en échec + service qui boote + scope = LE bug et rien d'autre, borne ~6 tours ; puis **LOOP JUGE — obligatoire, solo comme orchestré** (skill `malt-judge-loop`) : lancer un sous-agent **`judge`** frais (`CHECKPOINT=hotfix-verify`, `ROUND=N`, worktree/branche, `REPORT_FILE=<SURFACE_FILE>` — en solo `/Users/stephenbegot/claude-exchange-llm/_solo/<TICKET>.md`, consigne du fix + cause racine, ce que je prétends avoir fait). Le juge contrôle le MÉTIER uniquement : le fix corrige-t-il vraiment la cause racine ? un test reproduit-il le cas métier du bug ? cas limite du domaine manquant ? effet de bord fonctionnel ? (ni lint, ni style, ni tests rouges — il ne lance rien.) **Un juge NEUF par round**, jusqu'à `OK` (**2 rounds max ici** — le gate `hotfix-plan-gate` du step 5b a déjà filtré la cause racine/le scope en amont → `[ASK]` si toujours `NEEDS_WORK` au round 2). Traiter les GAPS métier, ne pas sur-corriger. Ne JAMAIS juger dans le contexte qui a écrit le fix.
    - **Validation Sonar** (ici c'est un post-push assumé : la MR existe déjà, on valide en parallèle).
    - **Si une vérif locale échoue** (test, build, smoke-run, judge, Sonar) → fixer, commit + **repush sur la branche de la MR** (jamais master), la pipeline se relance. Onglet `[IMPL]`/`[PIPE (<numMR>)]`.
 

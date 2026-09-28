@@ -1,104 +1,96 @@
 ---
 name: miro
-description: Cree, edite et lit des boards, diagrammes et schemas Miro via le MCP Miro (mcp__miro__*), avec auto-verification du rendu par screenshot.
+description: Cree, edite et lit des boards, diagrammes et schemas Miro via le MCP Miro (mcp__miro__canvas_*), avec verification du rendu par data-rendered-bounds puis screenshot.
 ---
 
 # Miro — écrire/lire des schémas propres et auto-vérifiés
 
-Écrire ou lire des schémas Miro via le MCP `mcp__miro__*`. Objectif qualité **non négociable** : blocs lisibles, textes centrés, **zéro connecteur qui se croise**, **zéro chevauchement de texte**, espacement régulier. Toute écriture est **auto-vérifiée par screenshot** avant de dire "terminé".
+Écrire ou lire des schémas Miro via le MCP `mcp__miro__*`. Objectif qualité **non négociable** : blocs lisibles, **zéro connecteur qui se croise**, **zéro chevauchement de texte**, espacement régulier.
 
-## Règle d'or (RÈGLE ABSOLUE)
-
-**Toute écriture (`diagram_create` / `layout_create` / `layout_update`) DOIT être suivie d'une vérification visuelle par un sous-agent qui screenshote le board rendu.** Pas de screenshot inspecté = tâche non terminée. Le MCP Miro n'a PAS de capture native du rendu → le screenshot passe par un navigateur (chrome-devtools/playwright), délégué à un sous-agent.
+**Le MCP est passé au protocole Canvas Composer SVG** (vérifié 2026-09-25). Les tools `diagram_create`, `layout_create`, `layout_read`, `layout_update`, `context_explore`, `context_get`, `*_get_dsl` **n'existent plus**. Tout passe par `canvas_*`.
 
 ## Champs communs sur presque tous les tools
 
 - `invocation_source: "skill"` (déclenché par ce skill).
 - `is_repository: true` (cwd = repo git — cas Malt).
 
-## Choisir l'outil d'écriture
+## Les tools qui existent
 
-| Besoin | Outil | Pourquoi |
-|---|---|---|
-| Schéma structuré standard : flowchart, UML class/sequence, ERD | **`diagram_create`** | **Auto-layout Miro** → évite mécaniquement les croisements/chevauchements. **Préférer par défaut.** |
-| Layout libre : mix formes/sticky/frames/connecteurs custom | `layout_create` | Coordonnées manuelles → TOI de garantir l'anti-chevauchement |
-| Corriger un board existant | `layout_read` → `layout_update` | Find-replace ciblé sur le DSL courant |
-
-**Défaut : `diagram_create`.** N'utilise `layout_create` que si le schéma n'entre dans aucun type de diagramme, car le placement manuel est la source n°1 de croisements.
-
-## DSL : toujours le récupérer au runtime
-
-Le DSL exact (types d'items, syntaxe connecteurs `alias -> alias`, couleurs/shapes valides, exemple) **n'est pas connu à l'avance**. Avant CHAQUE `*_create` :
-
-- `layout_get_dsl` (aucun param) avant `layout_create`.
-- `diagram_get_dsl` (`miro_url`, `diagram_type`) avant `diagram_create`.
-
-Appeler **1 fois par type**, réutiliser la spec dans la conversation. Ne jamais deviner la syntaxe.
+| Besoin | Tool |
+|---|---|
+| Charger le protocole (OBLIGATOIRE avant d'écrire) | `canvas_get_canvas_composer_skill` |
+| Guidance par format (Mermaid, slides, prototypes) | `canvas_load_format_skill` |
+| Créer du contenu | `canvas_create_from_svg` |
+| Itérer sur du contenu existant | `canvas_update_from_svg` |
+| Découvrir / localiser | `canvas_search` (`overview`, puis `areas` / `matches`) |
+| Lire une zone en SVG réinjectable | `canvas_read_as_svg` |
 
 ## Workflow d'écriture
 
 1. `user_who_am_i` — confirmer l'auth.
-2. Board cible : `board_search_boards` (query) pour retrouver un board existant. Sinon `board_create` — **action irréversible, confirmer avec l'utilisateur** (idem création implicite via `diagram_create` sans `miro_url`).
-3. Récupérer le DSL (`*_get_dsl`, cf. ci-dessus).
-4. Écrire (`diagram_create` de préférence).
-5. **Vérif logique** : `context_get` sur l'URL de l'item (`?moveToWidget=<id>`) → renvoie du **Mermaid** = contrôle structurel fiable (nœuds/relations présents).
-6. **Vérif visuelle par sous-agent** (obligatoire, section dédiée ci-dessous).
-7. Corriger via `layout_update` (après `layout_read`) jusqu'à ce que le screenshot soit propre.
+2. `canvas_get_canvas_composer_skill` **sans argument** → il renvoie l'étape suivante. Puis `step="design"` (style guide Bright Paper) puis `step="dsl"` (grammaire SVG). Ne jamais écrire avant d'avoir la spec : elle est longue (~54 ko), la lire une fois et la réutiliser.
+3. Pour un diagramme Mermaid : `canvas_load_format_skill(format_name="diagramming", notation="flowchart"|"entity_relationship"|"uml_class"|"uml_sequence"|"free_form")` → palette Fluoro + exemple.
+4. `canvas_search(result_mode="overview")` sur le board cible pour savoir ce qui s'y trouve déjà.
+5. `canvas_create_from_svg` — un seul `<svg>` racine, chaque enfant direct = un module top-level.
+6. **Vérif des bounds** (ci-dessous), puis vérif visuelle par sous-agent.
+7. Corriger via `canvas_update_from_svg` en repartant du `result_svg` précédent.
 
-## Règles anti-chevauchement pour `layout_create` (coordonnées manuelles)
+## Vérif des bounds — LE contrôle qui marche sans navigateur
 
-`layout_create` n'a pas d'auto-layout — appliquer ces règles explicitement :
+Chaque réponse `canvas_create_from_svg` / `canvas_update_from_svg` renvoie :
 
-- **Grille régulière** : board center = (0,0). Aligner les blocs sur une grille (ex. pas de 300px en x, 200px en y). Ne jamais poser deux blocs à des coordonnées "à peu près".
-- **Espacement** : ≥ 150px de gap entre blocs voisins ; largeur de bloc = largeur texte + marge, pas plus serré.
-- **Texte centré** : renseigner l'alignement centré (h+v) sur chaque bloc porteur de texte ; dimensionner le bloc pour que le texte ne déborde pas (pas de troncature).
-- **Flux directionnel** : orienter les connecteurs dans un sens unique (haut→bas ou gauche→droite). Un flux monotone supprime la majorité des croisements.
-- **Pas de connecteur qui traverse un bloc** : router en réservant des couloirs libres entre les colonnes/lignes de la grille.
-- **Frames d'abord** : placer les frames, puis les items (avec `parent`), puis les connecteurs (référencent les alias).
-- **Coords dans un frame** : avec `?moveToWidget=<frame_id>`, (0,0) = coin haut-gauche du frame ; l'item doit tenir dedans.
-- **Taille DSL max 50000 chars** → découper les gros schémas.
+- un message listant les ids dont **les dimensions mesurées diffèrent** de celles soumises ;
+- un `result_svg` où chaque widget porte `data-rendered-bounds="x y width height"` en coordonnées **absolues** (même pour les enfants d'une frame : ajouter le `translate` de la frame pour comparer avec les coords authorées).
 
-`diagram_create` gère tout ça seul : pour un schéma structuré, laisse Miro placer.
+Contrôle systématique : pour chaque carte, `bounds(texte).y + bounds(texte).height <= bounds(carte).y + bounds(carte).height`. Idem titre vs sous-titre. C'est ce contrôle qui attrape les débordements, pas la relecture du SVG soumis.
 
-## Vérification visuelle par sous-agent (RÈGLE ABSOLUE)
+**Piège mesuré** : un `<text>` en `font-size=67` sur 1600 px rend 1697 px de large et ~96 px de haut ; un `<textArea>` placé 22 px sous la *baseline* du titre le chevauche. Laisser ≥ 40 px entre baseline de titre et top du textArea suivant.
 
-Après CHAQUE écriture, dispatcher un **sous-agent** dédié (économie de contexte : les screenshots et l'analyse ne polluent pas le thread principal). Le sous-agent :
+## Écrire le SVG — pièges vérifiés
 
-1. Ouvre l'URL du board dans un navigateur via `mcp__chrome-devtools__navigate_page` (ou playwright `browser_navigate`), attend le rendu.
-2. `take_screenshot` du board (zoomer/fit si besoin pour tout cadrer).
-3. **Inspecte le screenshot** et retourne une CONCLUSION structurée (pas le dump image) :
-   - Connecteurs qui se croisent ? (liste des paires)
-   - Texte qui déborde / est tronqué / se chevauche ? (quels blocs)
-   - Textes non centrés ? Blocs mal espacés / superposés ?
-   - Verdict : **PROPRE** ou **À CORRIGER** + liste précise de corrections (bloc, ancien→nouveau x/y/width, ou connecteur à re-router).
+- **Frame** : `<g id="f1" data-frame="Titre" transform="translate(x,y)">` + premier enfant `<rect data-type="frame" x="0" y="0" .../>`. Les coords des enfants sont **relatives** à la frame.
+- **Éditer un enfant de frame** : il faut réémettre la frame **sous sa forme complète** (`data-miro-id` + `data-frame` + son `<rect data-type="frame">`). Un `<g data-miro-id>` nu est ignoré ("plain `<g>` is ignored") et l'enfant est alors traité comme déplacé en coords canvas → l'update échoue.
+- **Escaping** : dans le corps Mermaid d'un `<foreignObject data-type="diagram">`, tout est XML-escapé — `--&gt;`, `&lt;br/&gt;`. Un `<br/>` brut fait rejeter tout le diagramme. Dans le corps d'un `<textArea>`, au contraire, `<b>` et `<br/>` sont du vrai markup accepté.
+- **Widget diagram — PIÈGE MAJEUR, vérifié 2026-09-25.** Taille figée à 1600x900. Il est **non déplaçable** (`diagram does not support updates to: x/y`) **et non supprimable** (`diagrams cannot be deleted`). Pire : **toute mise à jour de son corps Mermaid le DÉPLACE** à une position arbitraire décidée par le serveur (mesuré : un diagramme en 6400,260 est parti en 5555,345 ; un autre en 3627,240 a atterri en -52,3876, par-dessus une frame). Conséquence : **un diagramme Mermaid est en pratique immuable**. Si son contenu doit changer, en créer un nouveau au bon endroit et demander à l'utilisateur de supprimer l'ancien à la main. Ne jamais lancer une réécriture en masse de diagrammes : on obtient N diagrammes éparpillés sans moyen de les replacer.
+- **`<textArea>` porteur de markup : NE JAMAIS le mettre à jour.** Vérifié deux fois le 2026-09-25 : toute écriture sur un `<textArea>` dont le corps contient `<b>` ou `<br/>` — y compris un patch de position seule — transforme le markup en **texte littéral** (le board affiche `<b>…</b>`). Le renvoyer avec du vrai markup ne le répare pas. Seule issue : **créer un nouveau textArea** et supprimer l'ancien. Corollaire : mettre le texte riche dans des textArea qu'on ne retouchera plus, ou n'utiliser que du texte brut si le bloc doit évoluer.
+- **Widget `<text>` : la largeur est FIGÉE à la création.** Remplacer le texte par une chaîne plus longue le fait wrapper sur 2, 3 ou 6 lignes dans la même largeur, et le serveur recentre verticalement (donc le `y` bouge aussi). Pour renommer un libellé : rester **plus court** que l'original, ou baisser `font-size`, et re-poser le `y` explicitement.
+- **Z-index = ordre de création** : panneaux de fond d'abord, cartes ensuite, textes en dernier.
+- **`data-miro-id`** : jamais inventé, jamais recopié de mémoire — uniquement repris d'un `result_svg`.
+- **Suppression** : `data-deleted="true"` explicite, destructif → confirmer avec l'utilisateur avant.
+- Retirer un élément du SVG **ne le supprime pas** : l'update est additif/patch.
 
-Prompt type pour le sous-agent :
+## Grille anti-chevauchement (composition à la main)
 
-> Ouvre `<board_url>` dans le navigateur (chrome-devtools navigate_page puis take_screenshot, fit-to-screen). Inspecte VISUELLEMENT le schéma. Cherche : connecteurs qui se croisent, texte qui déborde/se chevauche/tronqué, textes non centrés, blocs superposés ou mal espacés. Retourne UNIQUEMENT une conclusion : verdict PROPRE/À CORRIGER + liste précise des corrections (bloc + coord/width cibles, connecteurs à re-router). Pas de dump du screenshot.
+- Échelle d'espacement Miro : 10, 20 (entre textes), 32, 64 (dans/autour d'un conteneur), 160, 320 (entre sections).
+- Gabarit qui a marché : carte 420x210, gap 32, 4 cartes par rangée, panneau de fond 1840 de large avec 32 de padding, frame 1968 de large avec 64 de padding.
+- Une seule famille de couleur par structure (style Bright Paper) : panneaux en teinte *faint*, cartes blanches, bordure en teinte *light* de la même famille. Max 3 familles par artefact.
+- Flux directionnel unique (haut→bas ou gauche→droite) : supprime l'essentiel des croisements.
 
-Si verdict = À CORRIGER → appliquer via `layout_update` (find-replace sur les lignes fautives après `layout_read`) puis **re-dispatcher un sous-agent de vérif**. Boucler jusqu'à PROPRE. Déclarer terminé seulement sur un verdict PROPRE.
+## Vérification visuelle par sous-agent
+
+Après écriture, dispatcher un sous-agent qui ouvre le board dans un navigateur (chrome-devtools `navigate_page` + `take_screenshot`, sinon skill `playwright-cli`), fit-to-screen puis zoom, et retourne **une conclusion** : verdict PROPRE / À CORRIGER + corrections précises (bloc, coord cible, connecteur à re-router). Pas de dump d'image.
+
+**Limite connue** : un navigateur piloté par MCP arrive sur un board Miro **non authentifié** → le sous-agent rend « BLOQUÉ: login Miro requis ». Dans ce cas la vérif des bounds est le seul contrôle automatique disponible : la faire à fond, puis **dire explicitement à l'utilisateur** que le rendu (notamment l'auto-layout Mermaid et ses croisements) n'a pas pu être contrôlé et lui demander un coup d'œil.
 
 ## Lire un board existant
 
-- `context_explore` (`miro_url`) — inventaire haut-niveau : frames, docs, tables, diagrams (titres + URLs). **Première étape de découverte.**
-- `context_get` (`miro_url`) — contenu textuel ; board nu = overview IA ; `?moveToWidget=<id>` = contenu de l'item (diagram→Mermaid, frame→résumé, doc→Markdown, table→data).
-- `layout_read` (`miro_url`, `mode` structured/full) — items en DSL réinjectable dans `layout_update`. Les ids retournés sont des URLs Miro réutilisables.
-- `board_list_items` — items paginés bruts (capé à 50 si filtré par parent).
+- `canvas_search(result_mode="overview")` sans patterns — inventaire. Jamais de regex attrape-tout.
+- `canvas_search(result_mode="areas"|"matches", patterns=[...])` pour cibler.
+- `canvas_read_as_svg` avec les 4 champs de scope (ou `widget_ids`) une fois la zone identifiée. Échoue au-dessus de 500 widgets.
 
 ## Erreurs fréquentes
 
 | Erreur | Correctif |
 |---|---|
-| Deviner le DSL sans `*_get_dsl` | Toujours récupérer la spec au runtime, 1×/type |
-| Utiliser `layout_create` pour un flowchart | Utiliser `diagram_create` (auto-layout anti-croisement) |
-| Déclarer terminé sans screenshot | Vérif visuelle par sous-agent obligatoire avant "fini" |
-| `layout_update` sans `layout_read` | `old_string` doit matcher le DSL courant exact |
-| Créer un board sans confirmer | `board_create` / board implicite = irréversible → confirmer |
-| Chercher un screenshot via `image_get_data` | Ne marche que sur des items IMAGE ; rendu board = browser |
-| Blocs collés / texte tronqué | Grille + gap ≥150px + bloc dimensionné au texte + centrage |
+| Appeler `diagram_create` / `layout_*` | Ils n'existent plus → `canvas_create_from_svg` |
+| Écrire sans charger le composer skill | `canvas_get_canvas_composer_skill` puis `step=design` puis `step=dsl` |
+| Patcher un enfant de frame via un `<g>` nu | Réémettre la frame complète (`data-frame` + rect de fond) |
+| `<br/>` brut dans un corps Mermaid | `&lt;br/&gt;` |
+| Déclarer terminé sans contrôler les bounds | Comparer `data-rendered-bounds` texte vs carte |
+| Créer un board sans confirmer | `board_create` = irréversible → confirmer |
 
 ## Red flags — STOP
 
-- "Le schéma a l'air bon, pas besoin de screenshot" → NON, vérif visuelle obligatoire.
-- "J'utilise layout_create, c'est plus flexible" pour un diagramme standard → utilise `diagram_create`.
+- "Les dimensions ont l'air bonnes" → lire `data-rendered-bounds`, pas le SVG soumis.
 - "Je place les blocs approximativement" → grille régulière, sinon chevauchements.
+- "Le screenshot a échoué, tant pis" → le dire à l'utilisateur, ne pas déclarer PROPRE.

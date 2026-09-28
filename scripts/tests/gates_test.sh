@@ -98,6 +98,17 @@ $ST set skills=vue-best-practices,malt-frontend-conventions
 t "édition .vue avec skills"                  0 gate-skills.sh "$(pay Edit "$HOME" "file_path=$WT/T/app/components/VFoo.vue")"
 t "édition test backend sans skill"           2 gate-skills.sh "$(pay Edit "$HOME" "file_path=$WT/T/erp/x/src/test/kotlin/FooTest.kt")"
 t "édition hors repo"                         0 gate-skills.sh "$(pay Edit "$HOME" "file_path=$HOME/notes.md")"
+$ST set skills=malt-backend-testing
+out=$(printf '%s' "$(pay Edit "$HOME" "file_path=$MAIN_REPO/erp/x/src/main/kotlin/A.kt")" | ./gate-skills.sh 2>&1)
+printf '%s' "$out" | grep -q 'prose-required' \
+  && { pass=$((pass+1)); echo "  ok   rappel claude-prose sur edition .kt"; } \
+  || { fail=$((fail+1)); echo "  FAIL rappel claude-prose absent ($out)"; }
+$ST set skills=malt-backend-testing,claude-prose
+out=$(printf '%s' "$(pay Edit "$HOME" "file_path=$MAIN_REPO/erp/x/src/main/kotlin/A.kt")" | ./gate-skills.sh 2>&1)
+printf '%s' "$out" | grep -q 'prose-required' \
+  && { fail=$((fail+1)); echo "  FAIL rappel claude-prose repete alors que le skill est charge"; } \
+  || { pass=$((pass+1)); echo "  ok   claude-prose charge -> plus de rappel"; }
+$ST set skills=
 t "Grep monorepo sans pré-analyse (warn)"     0 gate-skills.sh "$(pay Grep "$HOME" "path=$MAIN_REPO/erp")"
 $ST set skills=
 
@@ -110,6 +121,17 @@ printf '{"tool_name":"Agent","tool_input":{"subagent_type":"judge","prompt":"CHE
 [[ -n "$($ST get judge_ok_pre_push)" ]] \
   && { pass=$((pass+1)); echo "  ok   verdict juge OK enregistré"; } \
   || { fail=$((fail+1)); echo "  FAIL verdict juge non enregistré"; }
+$ST set judge_ok_pre_push= judge_ok_plan=
+printf '{"tool_name":"Agent","tool_input":{"subagent_type":"judge","prompt":"CHECKPOINT=pre-push ROUND=2 ... GAPS DU ROUND 1 issus du gate dev-plan-gate amont"},"tool_response":"VERDICT: OK"}' | ./wf-record.sh >/dev/null
+[[ -n "$($ST get judge_ok_pre_push)" && -z "$($ST get judge_ok_plan)" ]] \
+  && { pass=$((pass+1)); echo "  ok   verdict pre-push cite 'dev-plan-gate' -> range en pre-push"; } \
+  || { fail=$((fail+1)); echo "  FAIL verdict pre-push mal range (plan=$($ST get judge_ok_plan) push=$($ST get judge_ok_pre_push))"; }
+$ST set judge_ok_pre_push= judge_ok_plan=
+printf '{"tool_name":"Agent","tool_input":{"subagent_type":"judge","prompt":"CHECKPOINT=dev-plan-gate ROUND=1"},"tool_response":"VERDICT: OK"}' | ./wf-record.sh >/dev/null
+[[ -n "$($ST get judge_ok_plan)" && -z "$($ST get judge_ok_pre_push)" ]] \
+  && { pass=$((pass+1)); echo "  ok   verdict dev-plan-gate ne debloque pas le push"; } \
+  || { fail=$((fail+1)); echo "  FAIL dev-plan-gate mal range (plan=$($ST get judge_ok_plan) push=$($ST get judge_ok_pre_push))"; }
+$ST set judge_ok_pre_push=1
 printf '{"tool_name":"Agent","tool_input":{"subagent_type":"smoke-runner","prompt":"x"},"tool_response":"BOOTED_OK en 92s"}' | ./wf-record.sh >/dev/null
 [[ -n "$($ST get smoke_ok)" ]] \
   && { pass=$((pass+1)); echo "  ok   smoke-run enregistré"; } \

@@ -9,6 +9,8 @@
 #
 # Gates :
 #   skill-required  éditer un fichier sans avoir chargé le(s) skill(s) qui le couvre(nt)
+#   prose-required  écrire du code sans le skill claude-prose (défaut : warn — le
+#                   rappel doit passer même dans un sous-agent sans tool Skill)
 #   preanalysis     explorer le monorepo sans pré-analyse (défaut : warn — un
 #                   blocage casserait les sous-agents explorer/judge, qui n'ont
 #                   pas le tool Skill)
@@ -28,6 +30,15 @@ need() {  # $1 = skills requis (csv), $2 = raison
   done
   [[ -n "$missing" ]] || return 0
   gate_deny skill-required "$2 — skill(s) non chargé(s) :$missing. AGENTS.md § Skills To Load : charger le skill AVANT d'éditer (tool Skill), il porte les conventions du domaine. Déjà lu dans une session antérieure ne compte pas : le charger ici."
+}
+
+PROSE_DONE=0
+prose() {  # $1 = chemin -> rappelle la barre de prose sur tout fichier de code
+  [[ $PROSE_DONE -eq 0 ]] || return 0
+  case "$1" in *.kt|*.java|*.ts|*.tsx|*.vue|*.js|*.sql|*.py|*.yaml|*.yml) : ;; *) return 0 ;; esac
+  case "$LOADED" in *",claude-prose,"*) return 0 ;; esac
+  PROSE_DONE=1
+  gate_deny prose-required "code écrit sans le skill claude-prose. Barre permanente : clair, lisible, compréhensible, CONCIS. Commentaires : défaut AUCUN, plafond dur 1 à 2 lignes, seulement un fait impossible à lire dans le code (piège, contrainte externe, pourquoi PAS la solution évidente, TODO, directive outillage). À supprimer à vue : reformulation d'un nom, explication métier (elle vit dans JIRA), récit de ticket, // given/when/then, code commenté. Charger le skill claude-prose (tool Skill) pour le détail, et relire ses propres lignes '+' avant push."
 }
 
 skills_for() {  # $1 = chemin -> csv de skills requis
@@ -58,6 +69,7 @@ case "$TOOL" in
     case "$fp" in "$MAIN_REPO"/*|"$WT_ROOT"/*) : ;; *) exit 0 ;; esac
     req="$(skills_for "$fp")"
     [[ -n "$req" ]] && need "$req" "édition de $(basename "$fp")"
+    prose "$fp"
     ;;
   Bash)
     gate_load_cmd
@@ -66,6 +78,7 @@ case "$TOOL" in
       case "$f" in "$MAIN_REPO"/*|"$WT_ROOT"/*) : ;; *) continue ;; esac
       req="$(skills_for "$f")"
       [[ -n "$req" ]] && need "$req" "écriture Bash dans $(basename "$f")"
+      prose "$f"
     done
     ;;
   Grep|Glob)

@@ -10,10 +10,11 @@ Niveau défaut **full** (`/caveman lite|full|ultra` ; « mode normal » désacti
 
 Direct, zéro blabla. Montrer le raisonnement, jamais d'hypothèse silencieuse. **Vérifier avant d'affirmer** (lire le code, lire les docs fournies). Pas de cleanup non demandé.
 
-## COMMUNICATION AVEC L'UTILISATEUR — DEUX SKILLS OBLIGATOIRES
+## COMMUNICATION AVEC L'UTILISATEUR — TROIS SKILLS OBLIGATOIRES
 
 - **Je pose une question** (clarification, arbitrage, `AskUserQuestion`, « je te laisse trancher »), ou il répond « je n'ai rien compris » → charger `asking-the-user` AVANT de rédiger. Gabarit : le fait en 1 à 3 phrases avec les **vrais noms**, la question, 2 à 4 options d'une ligne, une reco. 150 mots max.
 - **Je rédige un document lu par un humain** (RFC, Notion, description ou commentaire JIRA, description de MR, compte rendu, doc markdown) → charger `writing-for-humans` AVANT d'écrire. Conclusion en haut, uniquement le sujet demandé, cible non technique par défaut, zéro tic d'écriture IA.
+- **J'écris quoi que ce soit d'autre** (commentaire de code, message de commit, réponse) → skill `claude-prose`, la barre permanente : clair, lisible, compréhensible, concis. Il porte aussi le plafond dur des commentaires de code (§ COMMENTAIRES DANS LE CODE).
 
 ## LANGUE DES ÉCRITURES EXTERNES — RÈGLE ABSOLUE
 
@@ -27,7 +28,7 @@ Choisir **avant toute action**. Signal : un numéro de ticket JIRA en entrée �
 - **`/orchestrator`** — propriétaire UNIQUE du fan-out CMUX et du cycle de vie des tickets d'un chantier planifié. **Un seul par workspace.**
 - **`/dev`** — un ticket JIRA implémenté de bout en bout (worktree → tests → MR → pipeline → statuts). Ne jamais merger la MR soi-même.
 - **`/hotfix`** — diagnostic → cause racine → crée son ticket → implémente.
-- **Le juge est un sous-agent, pas une surface.** Chaque surface lance elle-même un sous-agent `judge` frais à chaque round jusqu'au verdict `OK`. Protocole : skill `malt-judge-loop`.
+- **Le juge est un sous-agent MÉTIER, pas une surface.** Chaque surface lance elle-même un sous-agent `judge` frais à chaque round jusqu'au verdict `OK`. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
 
 ## ÉTAT DE WORKFLOW — OUTILLÉ, PAS DÉCLARATIF
 
@@ -56,6 +57,7 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 | `quiet-hours` | entre 20h00 et 07h00 : `ScheduleWakeup`, `CronCreate`, `/loop`, boucle `until` en background, réveil de surface, spawn d'`/orchestrator`. Un round de juge synchrone reste autorisé |
 | `external-lang` | écriture JIRA / GitLab / Notion contenant du français (exception : `customfield_11956`) |
 | `skill-required` | éditer un `.vue`, un test, un contrat d'API, une migration, `erp/accounting*` sans avoir chargé le skill du domaine |
+| `prose-required` *(warn)* | écrire du code sans le skill `claude-prose` — rappelle la barre (clair, lisible, concis ; commentaires 0 par défaut, plafond 1-2 lignes) |
 | `preanalysis` *(warn)* | explorer le monorepo sans pré-analyse (skill `malt-accounting-domain` ou note Obsidian) |
 
 **Portée — les gates de workflow ne valent QUE dans le monorepo Malt** (`~/Documents/projects/malt` et `~/worktrees/malt/*`) : `master-write`, `master-push`, `worktree-form`, `coverage`, `pre-push` — donc aussi le juge, qui n'est exigé que par `pre-push`. Dans un repo perso (portfolio, side projects) ils se taisent : commit et push directs, sans juge ni worktree. Restent globaux, parce qu'ils ne dépendent d'aucun répertoire : `coauthor`, les gates GitLab (`mr-create`, `rebase-skipci`, `mr-merge`) et l'hygiène (`tmp-ban`, `quiet-hours`, `external-lang`, `skill-required`).
@@ -74,7 +76,7 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 
 Un commentaire ne survit que s'il porte un fait **impossible à lire dans le code** dont l'ignorance ferait commettre une erreur : piège/invariant non évident, contrainte externe (quirk NetSuite, legacy, ordre, unité), « pourquoi PAS la solution évidente », `TODO`/`FIXME`, directives outillage (`ktlint-disable`, `language=SQL`, `eslint-disable`, licence).
 
-Supprimer à vue : reformulation d'un nom, explication métier (elle vit dans JIRA), récit de ticket ou d'historique, énumération d'appelants, renvoi au KDoc d'une autre classe, titres markdown dans un commentaire, `@param`/`@return` qui répètent le type, `// given`/`// when`/`// then`, code commenté. **Raccourcir ≠ résumer** : garder le seul fait non lisible, sinon supprimer tout le bloc. Détail : `malt-workflow-commons` § DISCIPLINE DE COMMENTAIRE.
+Supprimer à vue : reformulation d'un nom, explication métier (elle vit dans JIRA), récit de ticket ou d'historique, énumération d'appelants, renvoi au KDoc d'une autre classe, titres markdown dans un commentaire, `@param`/`@return` qui répètent le type, `// given`/`// when`/`// then`, code commenté. **Raccourcir ≠ résumer** : garder le seul fait non lisible, sinon supprimer tout le bloc. Détail : skill **`claude-prose`** (source de vérité) ; où ça mord dans les workflows : `malt-workflow-commons` § DISCIPLINE DE COMMENTAIRE. **Contrôlé par moi en relisant mes `+` avant push — plus par le juge.**
 
 ## GIT WORKFLOW — RÈGLE ABSOLUE
 
