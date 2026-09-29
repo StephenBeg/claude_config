@@ -28,7 +28,7 @@ Choisir **avant toute action**. Signal : un numéro de ticket JIRA en entrée �
 - **`/orchestrator`** — propriétaire UNIQUE du fan-out CMUX et du cycle de vie des tickets d'un chantier planifié. **Un seul par workspace.**
 - **`/dev`** — un ticket JIRA implémenté de bout en bout (worktree → tests → MR → pipeline → statuts). Ne jamais merger la MR soi-même.
 - **`/hotfix`** — diagnostic → cause racine → crée son ticket → implémente.
-- **Le juge est un sous-agent MÉTIER, pas une surface.** Chaque surface lance elle-même un sous-agent `judge` frais à chaque round jusqu'au verdict `OK`. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
+- **Le juge est un sous-agent MÉTIER, pas une surface — UN SEUL round, à UN SEUL checkpoint, juste avant la livraison** (`pre-push` pour `/dev`, `hotfix-verify` pour `/hotfix`, `plan-gate` pour `/plan`). Pas de gate juge pré-impl, pas de boucle : `NEEDS_WORK` → fermer les GAPS avec preuve puis escalader `[ASK]`. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
 
 ## ÉTAT DE WORKFLOW — OUTILLÉ, PAS DÉCLARATIF
 

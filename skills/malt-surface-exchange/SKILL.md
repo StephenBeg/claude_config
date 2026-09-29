@@ -126,7 +126,7 @@ Appendre une entrée de journal :
 | Inbox | Créé + headeré par | Header contient |
 |---|---|---|
 | `$WF/_inbox/orchestrator.md` | Orchestrateur, au démarrage du workflow | header minimal (rôle du canal) |
-| `$WF/<T>.md` | Orchestrateur, **avant** le spawn de T (dev ET plan) | le **prompt de départ complet** de la surface T (checkpoints juge attendus — détail skill `malt-judge-loop` — : dev=dev-plan-gate+pre-push · hotfix=hotfix-plan-gate+hotfix-verify · plan=plan-gate) |
+| `$WF/<T>.md` | Orchestrateur, **avant** le spawn de T (dev ET plan) | le **prompt de départ complet** de la surface T (checkpoint juge unique attendu — détail skill `malt-judge-loop` — : dev=pre-push · hotfix=hotfix-verify · plan=plan-gate) |
 
 En **solo**, il n'y a pas d'orchestrateur : la surface crée elle-même son `SURFACE_FILE` sous `_solo/` (§ ARBORESCENCE, cas SOLO) au moment du premier round de juge.
 

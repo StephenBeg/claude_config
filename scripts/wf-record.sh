@@ -4,7 +4,7 @@
 # Les gates ne peuvent exiger une étape que si son accomplissement est OBSERVÉ.
 # Ce hook transforme trois événements réels en état persistant :
 #   Skill(<nom>)            -> skills=<csv>            (gate skill-required)
-#   Agent(judge) VERDICT OK -> judge_ok_pre_push=1     (gate pre-push)
+#   Agent(judge) VERDICT OK -> judge_ok_pre_push=1     (gate pre-push, round unique)
 #   Agent(smoke-runner) BOOTED_OK -> smoke_ok=1        (gate pre-push)
 # Rien n'est déclaré par le LLM : tout est lu dans la réponse de l'outil.
 set -uo pipefail
@@ -51,13 +51,13 @@ case "$tool" in
 
     if [[ "$at" == "judge" ]] || printf '%s' "$pr" | grep -q 'CHECKPOINT='; then
       # Ranger le verdict d'apres le CHECKPOINT DECLARE, jamais d'apres une
-      # sous-chaine du prompt : un juge pre-push qui MENTIONNE le gate amont
-      # (dev-plan-gate) etait classe en plan-gate -> push refuse a tort.
+      # sous-chaine du prompt : un juge pre-push qui MENTIONNE plan-gate
+      # etait classe en plan-gate -> push refuse a tort.
       plan_gate=0
       ckpt="$(printf '%s' "$pr" | sed -n 's/.*CHECKPOINT=\([a-z-]*\).*/\1/p' | head -1)"
       case "$ckpt" in
-        plan-gate|dev-plan-gate|hotfix-plan-gate) plan_gate=1 ;;
-        pre-push|hotfix-verify)                   plan_gate=0 ;;
+        plan-gate)              plan_gate=1 ;;
+        pre-push|hotfix-verify) plan_gate=0 ;;
         *) printf '%s' "$pr" | grep -q 'plan-gate' && plan_gate=1 ;;
       esac
       if printf '%s' "$rs" | grep -Eq 'VERDICT:? *OK'; then
@@ -71,7 +71,7 @@ case "$tool" in
       elif printf '%s' "$rs" | grep -Eq 'VERDICT:? *NEEDS_WORK'; then
         r="$($ST get judge_round)"; r="${r:-0}"
         $ST set "judge_round=$((r + 1))"
-        msgs+=("JUGE NEEDS_WORK (round $((r + 1))). RÈGLE ABSOLUE malt-judge-loop : pas de round N+1 sans PREUVE DE CLÔTURE PAR GAP — traiter toute l'étendue de chaque GAP (pas seulement l'exemple cité), appliquer le fix, produire la PREUVE LISIBLE que le GAP est clos (path:line du comportement metier desormais ecrit, nom du cas de test metier ajoute), et seulement ensuite lancer un juge NEUF. Le juge est METIER : un GAP de lint/style/commentaire/test rouge remonte par erreur ne se traite pas dans ce loop. Borne : 2 rounds (/dev, /hotfix), 4 (/plan) -> ensuite [ASK].")
+        msgs+=("JUGE NEEDS_WORK (round $((r + 1))). RÈGLE ABSOLUE malt-judge-loop : le juge ne passe QU'UNE FOIS. Traiter toute l'etendue de chaque GAP METIER (pas seulement l'exemple cite), appliquer le fix, produire la PREUVE LISIBLE que le GAP est clos (path:line du comportement metier desormais ecrit, nom du cas de test metier ajoute), puis ESCALADER [ASK] a l'utilisateur avec GAPS + corrections + preuves. Un second juge ne se lance QUE sur son autorisation explicite. Un GAP de lint/style/commentaire/test rouge remonte par erreur est du bruit : le noter et passer.")
       fi
     fi
     ;;
