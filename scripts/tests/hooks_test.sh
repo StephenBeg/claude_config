@@ -75,6 +75,44 @@ check "état de workflow réinjecté" 'ÉTAT DE WORKFLOW' "$out"
 out=$(printf '{"prompt":"go"}' | WF_FAKE_HOUR=22 ./wf-prompt-hook.sh 2>&1)
 check "heures calmes annoncées" 'HEURES CALMES ACTIVES' "$out"
 
+
+echo "== wf-record : ce que dit le LANCEMENT d'un sous-agent =="
+$ST reset
+agent_launch() {  # agent_launch <type> <id> <prompt>
+  python3 -c '
+import json, sys
+pr = sys.argv[3]
+print(json.dumps({"tool_name": "Agent",
+  "tool_input": {"subagent_type": sys.argv[1], "prompt": pr, "description": "d"},
+  "tool_response": {"isAsync": True, "status": "async_launched", "agentId": sys.argv[2],
+                    "prompt": pr, "description": "d", "outputFile": "/x",
+                    "canReadOutputFile": True, "resolvedModel": "m"}}))' "$1" "$2" "$3"
+}
+agent_stop() {   # agent_stop <id> <type> <dernier message>
+  python3 -c '
+import json, sys
+print(json.dumps({"hook_event_name": "SubagentStop", "agent_id": sys.argv[1],
+  "agent_type": sys.argv[2], "last_assistant_message": sys.argv[3],
+  "agent_transcript_path": "", "stop_hook_active": False}))' "$1" "$2" "$3"
+}
+out=$(printf '%s' "$(agent_launch judge h1 'CHECKPOINT=pre-mr ROUND=1 Rends VERDICT: OK ou NEEDS_WORK')" | ./wf-record.sh)
+check "le lancement annonce qu'aucun gate n'est leve" 'AUCUN gate' "$out"
+
+echo "== wf-subagent-hook : ce que dit le RESULTAT =="
+out=$(printf '%s' "$(agent_stop h1 judge 'VERDICT: OK
+PREUVES : ...')" | ./wf-subagent-hook.sh)
+check "verdict OK -> MR debloquee" 'VERDICT: OK' "$out"
+$ST reset
+printf '%s' "$(agent_launch smoke-runner h2 'MODULE=x Rends BOOTED_OK ou BOOT_FAILED')" | ./wf-record.sh >/dev/null
+out=$(printf '%s' "$(agent_stop h2 smoke-runner 'BOOT_FAILED - port 8140 occupe, attendu BOOTED_OK')" | ./wf-subagent-hook.sh)
+check "BOOT_FAILED -> gate pre-push laisse ferme" 'BOOT_FAILED' "$out"
+check "BOOT_FAILED ne pose pas smoke_ok" VIDE "$($ST get smoke_ok)"
+$ST reset
+printf '%s' "$(agent_launch judge h3 'CHECKPOINT=pre-mr ROUND=1 REPORT_FILE=/nowhere.md')" | ./wf-record.sh >/dev/null
+out=$(printf '%s' "$(agent_stop h3 judge 'je me suis arrete en cours de route')" | ./wf-subagent-hook.sh)
+check "sans verdict lisible -> gate pre-mr laisse ferme" 'wf-signals.py verdict-file' "$out"
+check "sans verdict lisible -> judge_ran_pre_mr non pose" VIDE "$($ST get judge_ran_pre_mr)"
+
 $ST reset; rm -rf "$SCRATCH"
 printf '\n%d ok, %d FAIL\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

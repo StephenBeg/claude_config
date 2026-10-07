@@ -19,6 +19,10 @@ ST="python3 $HOME/.claude/scripts/wf-state.py"
 input=$(cat)
 prompt=$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("prompt","") or "")' 2>/dev/null) || prompt=""
 
+# Workflow courant, lu par le gate prod-db (la base de prod n'est ouverte qu'à /hotfix).
+wf=$(printf '%s' "$prompt" | sed -nE '1s#^[[:space:]]*/(dev|plan|hotfix|orchestrator)([[:space:]].*)?$#\1#p; s#.*<command-name>/?(dev|plan|hotfix|orchestrator)</command-name>.*#\1#p' | head -1)
+[[ -n "$wf" ]] && $ST set "workflow=$wf"
+
 phase="$($ST get phase)"
 extra=""
 case "$phase" in
@@ -36,6 +40,9 @@ state=""
 # --- dispatcher : ticket JIRA en entrée -> /dev (CLAUDE.md § WORKFLOWS) -------
 ticket=$(printf '%s' "$prompt" | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b' | head -1)
 if [[ -n "$ticket" && -z "$($ST get ticket)" ]]; then
+  # Sans cette écriture, le gate jira-status du hook Stop ne se déclenche jamais :
+  # il lit une clé que rien ne posait.
+  $ST set "ticket=$ticket"
   extra="${extra}DISPATCHER (CLAUDE.md § WORKFLOWS) : le prompt porte le ticket $ticket et aucun workflow n'est en cours sur cette surface -> lancer /dev (ticket JIRA en entrée = /dev, la consigne vit dans le champ Prompt customfield_11956). Besoin large sans ticket -> /plan ; bug signalé sans ticket -> /hotfix. Poser aussi le titre de session commençant par $ticket, et le sujet : cmux-tab.sh topic \"<3-4 mots>\". "
 fi
 

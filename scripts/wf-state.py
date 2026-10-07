@@ -16,6 +16,8 @@ Champs :
   mr         IID de la MR (dès que le hook la voit passer)
   merged     1 quand la MR a été mergée
   end_done   1 quand /end a écrit le log du jour (vérifié, pas déclaré)
+  agent_<id> sous-agent lancé, en attente de son SubagentStop :
+             "<type>|<checkpoint>|<report_file>|<epoch de lancement>"
 """
 import json
 import os
@@ -52,6 +54,16 @@ def save(st: dict) -> None:
     with open(tmp, "w") as f:
         json.dump(st, f, indent=1, sort_keys=True)
     os.replace(tmp, path())  # atomique
+
+
+def prune_agents(st: dict, max_age: int = 86400) -> dict:
+    now = int(time.time())
+    for k in [k for k in st if k.startswith("agent_")]:
+        parts = str(st[k]).split("|")
+        born = parts[3] if len(parts) > 3 and parts[3].isdigit() else "0"
+        if now - int(born) > max_age:
+            st.pop(k, None)
+    return st
 
 
 def title(st: dict) -> str:
@@ -102,6 +114,9 @@ def main() -> int:
                 st.pop(k, None)
             else:
                 st[k] = v
+        save(st)
+    elif cmd == "prune-agents":
+        prune_agents(st)
         save(st)
     elif cmd == "phase":
         if not rest:

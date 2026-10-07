@@ -57,7 +57,7 @@ Il existe **un seul processus orchestrateur par workspace CMUX**. Un `/plan` (ra
    À CHAQUE transition, report ton statut ET réveille l'orchestrateur (RÈGLE ABSOLUE — c'est ce qui fait avancer le DAG) :
      ~/.claude/scripts/cmux-tab.sh report --notify $ORCH_SURFACE $STATUS_DIR <T> <STATE> "<detail>"
    STATES dev: IN_PROGRESS|MR_OPEN|MERGED|BLOCKED — STATES plan: IN_PROGRESS|PLANNED|BLOCKED
-   Notifie chaque étape dans l'inbox orchestrateur: note --notify $ORCH_SURFACE "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:…" "<preuve>". Au checkpoint unique (dev=pre-push · plan=plan-gate), lance TOI-MÊME UN SEUL sous-agent judge frais, REPORT_FILE=$WF/<T>.md (skill `malt-judge-loop`) ; NEEDS_WORK -> corriger avec preuve puis escalader [ASK], pas de round 2 automatique. Worktree attendu (dev): ~/worktrees/malt/<T>.
+   Notifie chaque étape dans l'inbox orchestrateur: note --notify $ORCH_SURFACE "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:…" "<preuve>". Au checkpoint unique (dev=pre-mr, avant glab mr create · plan=plan-gate), lance TOI-MÊME UN SEUL sous-agent judge frais, REPORT_FILE=$WF/<T>.md (skill `malt-judge-loop`) ; NEEDS_WORK -> corriger avec preuve puis CONTINUER (le gate pre-mr est leve par le passage du juge), pas de round 2 automatique. Worktree attendu (dev): ~/worktrees/malt/<T>.
    <le champ Prompt du ticket>
    # impl : "Ticket JIRA: <T>. Suis le WORKFLOW DE DEV."
    # spike: "Ticket JIRA: <T>. Lance /plan en mode enfant-orchestré."

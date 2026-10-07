@@ -109,15 +109,15 @@ for line in sys.stdin:
         added_src += 1
 print("NOTEST" if (added_src and not tests) else "OK")' 2>/dev/null)
   [[ "$verdict" == "NOTEST" ]] && in_malt_scope && \
-    gate_deny coverage "l'index ajoute du code SOURCE et AUCUN fichier de test. CLAUDE.md § COUVERTURE DE CODE : toute ligne ajoutée ou modifiée doit être couverte par un test (nouveau comportement -> TDD skill malt-backend-tdd ; code déjà écrit -> skill malt-test-coverage). Vérifier l'index : git -C $DIR diff --cached --name-only. Exception réelle (code généré, config triviale, logs purs) : passer `coverage = warn` dans ~/.claude/wf-gates.conf le temps du commit."
+    gate_deny coverage "l'index ajoute du code SOURCE et AUCUN fichier de test. CLAUDE.md § COUVERTURE DE CODE : toute ligne ajoutée ou modifiée doit être couverte par un test (nouveau comportement -> TDD skill malt-backend-tdd ; code déjà écrit -> skill malt-test-coverage). Vérifier l'index : git -C $DIR diff --cached --name-only. Exception réelle (code généré, config triviale, logs purs, diff 100 % commentaire) : le cran du gate est le réglage de l'UTILISATEUR, pas une sortie à prendre seul — le lui demander, il la pose avec le préfixe ! de la session. Ne JAMAIS indexer un test bidon pour satisfaire le compteur."
 fi
 
 # --------------------------------------------------------------------------- #
-# 6. 1er push d'une branche : juge OK + tests verts + smoke-run
+# 6. 1er push d'une branche : tests verts + smoke-run
+#    (le juge, lui, est exigé à la CRÉATION DE LA MR — section 7 : c'est là que
+#     l'implémentation est terminée ; un push de travail n'a rien à juger.)
 # --------------------------------------------------------------------------- #
 if in_malt_scope && gate_invoked 'git +push' && [[ -z "$($ST get mr)" ]]; then
-  [[ -n "$($ST get judge_ok_pre_push)" ]] || \
-    gate_deny pre-push "1er push sans verdict de JUGE. /dev step 4 + skill malt-judge-loop : lancer un sous-agent judge FRAIS (Agent subagent_type=judge, CHECKPOINT=pre-push, run_in_background=false) et ne pousser QUE sur 'VERDICT: OK'. Le hook enregistre le verdict tout seul quand il le voit passer."
   # app-config n'a ni Gradle ni pnpm : le détecteur tests_green (wf-bash-hook.sh)
   # ne peut jamais matcher, sa validation réelle est le job CI catalog-validator.
   origin_url="$(cd "$DIR" 2>/dev/null && git config --get remote.origin.url 2>/dev/null)"
@@ -144,7 +144,14 @@ for r in roots:
             apps.append(os.path.basename(r)); break
 print(",".join(sorted(set(apps))))' 2>/dev/null)
   if [[ -n "$svc" && -z "$($ST get smoke_ok)" ]]; then
-    gate_deny pre-push "1er push touchant un ou des service(s) applicatif(s) ($svc) sans SMOKE-RUN. /dev step 5 + commons § SMOKE-RUN LOCAL : les tests verts ne prouvent pas que le service boote (bean manquant, Liquibase invalide, FF absent). Déléguer au subagent smoke-runner (./gradlew :<module>:bootRun --args='--spring.profiles.active=dev'), attendre 'Started <App>Application in'. Env local indispo (devbox down, secret manquant) = non bloquant : passer `pre-push = warn` dans ~/.claude/wf-gates.conf et consigner la raison en Tradeoffs."
+    if gate_proof smoke-file smoke_pending; then
+      $ST set smoke_ok=1
+    else
+      gate_deny pre-push "1er push touchant un ou des service(s) applicatif(s) ($svc) sans SMOKE-RUN. /dev step 5 + commons § SMOKE-RUN LOCAL : les tests verts ne prouvent pas que le service boote (bean manquant, Liquibase invalide, FF absent).
+SORTIE : lancer le subagent smoke-runner avec un REPORT_FILE dans son prompt (Agent subagent_type=smoke-runner, prompt: 'MODULE=<basename> REPORT_FILE=<chemin absolu>'). Le sous-agent est ASYNCHRONE ici : ATTENDRE sa notification de fin, le hook SubagentStop pose smoke_ok tout seul sur un BOOTED_OK. Un smoke-run lancé dans le tour courant ne lève rien tant qu'il n'a pas rendu.
+SECOURS si la notification n'arrive pas : le gate relit le REPORT_FILE et accepte une ligne 'SMOKE-VERDICT: BOOTED_OK' écrite APRÈS le lancement. Boot lancé à la main : la ligne 'Started <App>Application(Kt) in' dans la sortie d'un Bash suffit aussi.
+BOOT_FAILED par la faute du diff = bug à corriger, pas un gate à lever. Env local indispo (devbox down, secret manquant) = non bloquant : le dire à l'utilisateur et lui demander de desserrer le cran lui-même, puis consigner la raison en Tradeoffs."
+    fi
   fi
 fi
 
@@ -152,6 +159,16 @@ fi
 # 7. Création de MR : reviewer, titre préfixé, labels
 # --------------------------------------------------------------------------- #
 if gate_invoked 'glab +mr +(create|new)'; then
+  if in_malt_scope && [[ -z "$($ST get judge_ran_pre_mr)" ]]; then
+    if gate_proof verdict-file judge_pending; then
+      $ST set judge_ran_pre_mr=1
+    else
+      gate_deny pre-mr "MR créée sans PASSAGE de JUGE. L'implémentation est terminée : c'est ICI que le juge métier est dû (/dev step 4, skill malt-judge-loop).
+SORTIE : Agent subagent_type=judge, prompt commençant par 'CHECKPOINT=pre-mr ROUND=1' et portant 'REPORT_FILE=<chemin absolu>'. Dans ce harnais l'outil Agent ne sait pas lancer un sous-agent en synchrone : le juge est forcément asynchrone. ATTENDRE sa notification de fin, le hook SubagentStop enregistre le passage tout seul.
+SECOURS si la notification n'arrive pas : le gate relit le REPORT_FILE et accepte une ligne 'JUDGE-VERDICT:' écrite APRÈS le lancement du juge.
+Le gate exige que le dev ait ÉTÉ JUGÉ, pas que le juge ait dit oui : un 'VERDICT: NEEDS_WORK' le lève aussi (fermer chaque GAP métier avec preuve, puis créer la MR, jamais de round 2)."
+    fi
+  fi
   printf '%s' "$CMD_RAW" | grep -q 'stephen.begot' || \
     gate_deny mr-create "MR créée sans reviewer. CLAUDE.md : @stephen.begot en reviewer DÈS la création (--reviewer stephen.begot)."
   title=$(printf '%s' "$CMD_RAW" | sed -nE 's/.*--title[= ]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^ ]+)).*/\2\3\4/p' | head -1)
@@ -199,55 +216,15 @@ if [[ -n "$merge_iid" ]] || gate_invoked 'glab +mr +merge'; then
   [[ -n "$($ST get rebased_skipci)" ]] || \
     gate_deny mr-merge "aucun rebase skip_ci=true observé avant ce merge. CLAUDE.md : rebase skip_ci=true PUIS merge — jamais l'un sans l'autre."
 
-  # Vérification contre le réel : commentaire Approved postérieur au dernier push + pipeline verte.
-  check=$(python3 - "$merge_iid" "$GLAB_PROJECT" <<'PY' 2>/dev/null
-import json, subprocess, sys, urllib.parse
-
-iid, project = sys.argv[1], sys.argv[2]
-base = "projects/%s/merge_requests/%s" % (urllib.parse.quote(project, safe=""), iid)
-
-def api(path):
-    r = subprocess.run(["glab", "api", path], capture_output=True, text=True, timeout=60)
-    if r.returncode != 0:
-        raise RuntimeError((r.stderr or "glab a échoué").strip().splitlines()[0])
-    return json.loads(r.stdout)
-
-try:
-    mr = api(base)
-    notes = api(base + "/notes?per_page=100&sort=desc")
-except Exception as e:
-    print("UNVERIFIABLE|%s" % e); raise SystemExit
-
-pipe = (mr.get("head_pipeline") or {}).get("status") or "aucune"
-sha = mr.get("sha") or ""
-pushed = ""
-if sha:
-    try:
-        pushed = api("projects/%s/repository/commits/%s" % (urllib.parse.quote(project, safe=""), sha)).get("committed_date", "")
-    except Exception:
-        pushed = ""
-
-approved = [n for n in notes
-            if not n.get("system")
-            and (n.get("author") or {}).get("username") == "stephen.begot"
-            and (n.get("body") or "").strip().lower() == "approved"]
-fresh = [n for n in approved if not pushed or n.get("created_at", "") > pushed]
-
-problems = []
-if pipe != "success":
-    problems.append("pipeline de tête = %s (attendu success)" % pipe)
-if not approved:
-    problems.append("aucun commentaire 'Approved' de @stephen.begot dans les 100 dernières notes")
-elif not fresh:
-    problems.append("le dernier 'Approved' (%s) est ANTÉRIEUR au dernier push (%s) : il est périmé, redemander un Approved"
-                    % (approved[0].get("created_at"), pushed))
-print(("OK" if not problems else "KO|" + " ; ".join(problems)))
-PY
-)
+  # Vérification contre le réel : Approved frais + vert citable (wf-mr-ready.py,
+  # testable seul avec WF_MR_FIXTURE). La fraîcheur se mesure contre le dernier
+  # push OBSERVÉ et contre authored_date, pas contre committed_date : le rebase
+  # prescrit juste avant le merge réécrit committed_date et périmait l'Approved.
+  check=$(python3 "$HOME/.claude/scripts/wf-mr-ready.py" "$merge_iid" "$GLAB_PROJECT" "$($ST get last_push_at)" 2>/dev/null)
   case "${check:-}" in
-    OK) : ;;
+    OK*) : ;;
     KO*)          gate_deny mr-merge "conditions de merge non réunies — ${check#KO|}. /dev step 13 : merge UNIQUEMENT sur un commentaire 'Approved' de @stephen.begot POSTÉRIEUR au dernier repush ET pipeline verte." ;;
-    UNVERIFIABLE*) gate_deny mr-merge "impossible de VÉRIFIER Approved + pipeline (${check#UNVERIFIABLE|}). Un merge ne se rejoue pas : le gate refuse plutôt que de supposer. Vérifier à la main (glab api .../notes) puis passer `mr-merge = off` dans ~/.claude/wf-gates.conf si le feu vert est réellement là." ;;
+    UNVERIFIABLE*) gate_deny mr-merge "impossible de VÉRIFIER Approved + pipeline (${check#UNVERIFIABLE|}). Un merge ne se rejoue pas : le gate refuse plutôt que de supposer. Vérifier à la main (glab api .../notes) et, si le feu vert est réellement là, le dire à l'utilisateur : le cran du gate est SON réglage, pas une sortie à prendre seul." ;;
     *)             gate_deny mr-merge "vérification Approved/pipeline sans réponse exploitable. Contrôler à la main avant de merger." ;;
   esac
 fi

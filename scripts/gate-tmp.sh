@@ -20,7 +20,9 @@ case "$TOOL" in
     gate_load_cmd
     # mktemp créé ET consommé dans la même commande : autorisé (seule exception).
     printf '%s' "$CMD_CODE" | grep -q 'mktemp' && exit 0
-    if printf '%s' "$CMD_CODE" | grep -Eq '(^|[^A-Za-z0-9_./-])(/private)?/tmp/|/var/folders/'; then
+    # `~` et `}` sont dans la classe autorisee : sans eux le gate refusait
+    # ~/tmp/scratch et ${HOME}/tmp, les chemins que son propre message prescrit.
+    if printf '%s' "$CMD_CODE" | grep -Eq '(^|[^A-Za-z0-9_./~}-])(/private)?/tmp/|/var/folders/'; then
       gate_deny tmp-ban "la commande écrit ou lit un chemin sous /tmp, /private/tmp ou /var/folders — purgés par macOS sans prévenir. CLAUDE.md : tout fichier hors repo git vit sous ~/. Emplacements : $DEST"
     fi
     ;;

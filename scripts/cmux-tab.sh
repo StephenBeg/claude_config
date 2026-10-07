@@ -12,7 +12,7 @@
 #   cmux-tab.sh state [show|get|set …]   # état de workflow persistant (cf. wf-state.py)
 #   cmux-tab.sh get                      # affiche le ref de surface courant
 #   cmux-tab.sh spawn "<prompt>" ["<titre>"] ["<cwd>"]
-#                                        # nouvel onglet -> claude (opus 5) + prompt
+#                                        # nouvel onglet -> claude (opus 5.5) + prompt
 #                                        # cwd défaut = ~/Documents/projects/malt
 #                                        # SPAWN = LIEN SEUL : aucun préambule injecté. Pour une
 #                                        #   surface orchestrée, le prompt de départ complet vit
@@ -297,7 +297,7 @@ case "$cmd" in
     # CMUX_SPAWN_MODEL=... cmux-tab.sh spawn ...
     # ATTENTION : l'ID contient des crochets ; il DOIT rester quoté dans la
     # commande envoyée au terminal (zsh globerait `[1m]` → "no matches found").
-    model="${CMUX_SPAWN_MODEL:-claude-opus-5[1m]}"
+    model="${CMUX_SPAWN_MODEL:-claude-opus-5-5[1m]}"
     # SPAWN = LIEN SEUL (skill malt-surface-exchange § SPAWN = LIEN SEUL) :
     # ce script ne construit AUCUN préambule. Le prompt de départ complet d'une
     # surface orchestrée vit dans le header de son inbox, écrit par

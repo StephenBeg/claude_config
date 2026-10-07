@@ -28,7 +28,7 @@ Choisir **avant toute action**. Signal : un numéro de ticket JIRA en entrée �
 - **`/orchestrator`** — propriétaire UNIQUE du fan-out CMUX et du cycle de vie des tickets d'un chantier planifié. **Un seul par workspace.**
 - **`/dev`** — un ticket JIRA implémenté de bout en bout (worktree → tests → MR → pipeline → statuts). Ne jamais merger la MR soi-même.
 - **`/hotfix`** — diagnostic → cause racine → crée son ticket → implémente.
-- **Le juge est un sous-agent MÉTIER, pas une surface — UN SEUL round, à UN SEUL checkpoint, juste avant la livraison** (`pre-push` pour `/dev`, `hotfix-verify` pour `/hotfix`, `plan-gate` pour `/plan`). Pas de gate juge pré-impl, pas de boucle : `NEEDS_WORK` → fermer les GAPS avec preuve puis escalader `[ASK]`. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
+- **Le juge est un sous-agent MÉTIER, pas une surface — UN SEUL round, à UN SEUL checkpoint, juste avant la livraison** (`pre-mr` pour `/dev` — implémentation terminée, avant `glab mr create` ; `hotfix-verify` pour `/hotfix` ; `plan-gate` pour `/plan`). Pas de gate juge pré-impl, pas de boucle : `NEEDS_WORK` → fermer les GAPS avec preuve **puis continuer** (le push reste ouvert ; rapporter GAPS, corrections et reste ouvert dans la MR et les Tradeoffs). Jamais de round 2, jamais de GO à demander pour pousser. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
 
 ## ÉTAT DE WORKFLOW — OUTILLÉ, PAS DÉCLARATIF
 
@@ -49,22 +49,34 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 | `worktree-form` | `git worktree add` hors `~/worktrees/malt/` ou sans base explicite `origin/master` |
 | `coauthor` | `Co-Authored-By` dans un message de commit (y compris en heredoc) |
 | `coverage` | `git commit` qui ajoute du code source sans **aucun** fichier de test dans l'index |
-| `pre-push` | **1er push** d'une branche sans verdict juge `OK`, sans exécution de tests verte observée, sans smoke-run des services applicatifs touchés (détectés par le diff) |
+| `pre-push` | **1er push** d'une branche sans exécution de tests verte observée, sans smoke-run des services applicatifs touchés (détectés par le diff) |
+| `pre-mr` | `glab mr create` sans **passage** de juge (`OK` **ou** `NEEDS_WORK` — le gate exige que le dev ait été jugé, pas que le juge ait dit oui). Le juge est dû **une fois, implémentation terminée, avant la MR** — pas au push. Il est **asynchrone** : son lancement ne lève rien, sa conclusion si |
 | `mr-create` | MR sans reviewer `@stephen.begot`, sans titre `[<préfixe>] Titre`, sans label |
-| `rebase-skipci` · `mr-merge` | rebase d'API sans `skip_ci=true` ; merge sans `--squash --remove-source-branch`, sans rebase préalable, sans commentaire `Approved` **postérieur au dernier push**, pipeline non verte — **fail closed** : invérifiable = refusé |
+| `rebase-skipci` · `mr-merge` | rebase d'API sans `skip_ci=true` ; merge sans `--squash --remove-source-branch`, sans rebase préalable, sans commentaire `Approved` **postérieur au dernier push réel**, pipeline non verte — un `skipped` de rebase `skip_ci` passe si une pipeline verte de la MR porte encore mes fichiers inchangés — **fail closed** : invérifiable = refusé |
 | `end-gate` · `closing-block` · `jira-status` · `livrable` | **clore le tour** : MR mergée sans `/end` écrit dans le log du jour · push sans bloc de clôture dans la réponse · ticket pas en `To Validate` · pas de tableau LIVRABLE FINAL avec Tradeoffs |
 | `tmp-ban` | tout chemin `/tmp`, `/private/tmp`, `/var/folders` (y compris le scratchpad proposé par le harness) — seule exception : `mktemp` consommé dans la même commande |
-| `quiet-hours` | entre 20h00 et 07h00 : `ScheduleWakeup`, `CronCreate`, `/loop`, boucle `until` en background, réveil de surface, spawn d'`/orchestrator`. Un round de juge synchrone reste autorisé |
+| `quiet-hours` | entre 20h00 et 07h00 : `ScheduleWakeup`, `CronCreate`, `/loop`, boucle `until` en background, réveil de surface, spawn d'`/orchestrator`. Un round de juge reste autorisé |
+| `prod-db` | lire la base de prod hors `/hotfix` : `malt-sql.sh` sans `--env integ`, tunnel `pg-prod`/`mongo-prod*`, token Cloud SQL, skill `malt-prod-sql` |
 | `external-lang` | écriture JIRA / GitLab / Notion contenant du français (exception : `customfield_11956`) |
 | `skill-required` | éditer un `.vue`, un test, un contrat d'API, une migration, `erp/accounting*` sans avoir chargé le skill du domaine |
 | `prose-required` *(warn)* | écrire du code sans le skill `claude-prose` — rappelle la barre (clair, lisible, concis ; commentaires 0 par défaut, plafond 1-2 lignes) |
 | `preanalysis` *(warn)* | explorer le monorepo sans pré-analyse (skill `malt-accounting-domain` ou note Obsidian) |
 
-**Portée — les gates de workflow ne valent QUE dans le monorepo Malt** (`~/Documents/projects/malt` et `~/worktrees/malt/*`) : `master-write`, `master-push`, `worktree-form`, `coverage`, `pre-push` — donc aussi le juge, qui n'est exigé que par `pre-push`. Dans un repo perso (portfolio, side projects) ils se taisent : commit et push directs, sans juge ni worktree. Restent globaux, parce qu'ils ne dépendent d'aucun répertoire : `coauthor`, les gates GitLab (`mr-create`, `rebase-skipci`, `mr-merge`) et l'hygiène (`tmp-ban`, `quiet-hours`, `external-lang`, `skill-required`).
+**Portée — les gates de workflow ne valent QUE dans le monorepo Malt** (`~/Documents/projects/malt` et `~/worktrees/malt/*`) : `master-write`, `master-push`, `worktree-form`, `coverage`, `pre-push`, `pre-mr` — donc aussi le juge, qui n'est exigé que par `pre-mr`. Dans un repo perso (portfolio, side projects) ils se taisent : commit et push directs, sans juge ni worktree. Restent globaux, parce qu'ils ne dépendent d'aucun répertoire : `coauthor`, `prod-db`, les gates GitLab (`mr-create`, `rebase-skipci`, `mr-merge`) et l'hygiène (`tmp-ban`, `quiet-hours`, `external-lang`, `skill-required`).
 
 **Cran par gate** : `~/.claude/wf-gates.conf` → `<gate> = block|warn|off`, relu à chaque appel. Un préfixe d'environnement sur une commande **ne parvient pas** au hook (process séparé) : pour lever un gate, éditer cette ligne. Kill switch de session : `WF_GATES_OFF=1` exporté **avant** de lancer Claude Code.
 
-**Ce que les gates LISENT pour décider** (écrit par les hooks `PostToolUse`, jamais déclaré) : verdict de juge (`VERDICT: OK` dans la réponse du sous-agent), `BOOTED_OK`/`Started …Application in`, sortie verte d'un run de tests, `skip_ci=true` d'un rebase, skills chargés, push du tour. Un `git commit` **périme** le verdict du juge. Scripts : `~/.claude/scripts/gate-*.sh`, `wf-record.sh` · tests : `~/.claude/scripts/tests/{gates,hooks}_test.sh`.
+**Ce que les gates LISENT pour décider** (écrit par les hooks, jamais déclaré) : passage de juge, smoke-run, sortie verte d'un run de tests, `skip_ci=true` d'un rebase, skills chargés, push du tour. Un `git commit` périme l'**approbation** du juge, pas le fait qu'un round ait eu lieu (le gate reste levé). Scripts : `~/.claude/scripts/gate-*.sh`, `wf-record.sh`, `wf-bash-hook.sh`, `wf-subagent-hook.sh`, `wf-signals.py`, `wf-mr-ready.py` · tests : `~/.claude/scripts/tests/{gates,hooks}_test.sh`.
+
+**INVARIANT DES GATES — un contrôle conclut sur un RÉSULTAT, jamais sur une requête.** Un gate doit être **levable** par une action que le workflow prescrit et que le harnais permet, et **non dupable** par le texte d'une demande. Trois conséquences tenues par les scripts, pas par la bonne volonté :
+
+- **Un sous-agent est toujours asynchrone ici.** Son LANCEMENT ne lève aucun gate : la réponse immédiate ne porte qu'un `agentId` et **rejoue le prompt**. C'est le hook `SubagentStop` qui lit sa conclusion réelle, ou à défaut son `REPORT_FILE` relu par le gate, à condition que le verdict y soit **postérieur au lancement**.
+- **Un message de refus décrit une sortie praticable.** Un gate qui prescrit un paramètre ou un outil inexistant coûte plus cher qu'un gate absent : il envoie dans une impasse avec l'autorité d'une règle.
+- **Un nouveau gate se vérifie avant d'exister** : `tests/gates_class_guard.py` refuse une clé d'état qu'aucun hook n'écrit, une prescription inexistante, un gate sans cran dans `wf-gates.conf` ou absent de cette table, et tout état posé au lancement d'un sous-agent.
+
+## BASE DE PROD — `/hotfix` SEULEMENT — RÈGLE ABSOLUE
+
+**Seul `/hotfix` lit la base de prod** (diagnostic d'un bug sur des données réelles). `/plan`, `/dev`, `/orchestrator`, une session libre et leurs sous-agents n'y touchent jamais et **ne demandent jamais** d'accès DB, de tunnel ni de `gcloud auth` à l'utilisateur. Les vraies données ancrent la session sur un cas particulier et la font dériver : travailler depuis le code, les contrats, les tests et les fixtures ; une hypothèse sur les données reste marquée « non vérifiée ». L'intégration reste lisible (`malt-sql.sh --env integ`). Un vrai bug de prod en vue → proposer `/hotfix`. *(Gate `prod-db`.)*
 
 ## COUVERTURE DE CODE — RÈGLE ABSOLUE
 

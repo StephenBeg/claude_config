@@ -1,6 +1,6 @@
 ---
 name: malt-judge-loop
-description: Protocole du JUGE METIER en sous-agent : UN SEUL round de controle radical-honesty, a UN SEUL checkpoint, juste avant la livraison (push, ou SPIKE DONE pour /plan). Perimetre strictement metier (besoin couvert, meilleure solution, pieges du domaine, cas de test metier). NEEDS_WORK -> corriger chaque GAP avec preuve lisible puis escalader [ASK], jamais de round 2 automatique. Fichier de compte rendu SURFACE_FILE. Source de verite unique — invoque par /dev, /hotfix, /plan.
+description: Protocole du JUGE METIER en sous-agent : UN SEUL round de controle radical-honesty, a UN SEUL checkpoint, juste avant la livraison (creation de MR, ou SPIKE DONE pour /plan). Perimetre strictement metier (besoin couvert, meilleure solution, pieges du domaine, cas de test metier). NEEDS_WORK -> corriger chaque GAP avec preuve lisible puis CONTINUER la livraison (le gate pre-mr exige d'avoir ete juge, pas d'avoir ete approuve), jamais de round 2 automatique. Fichier de compte rendu SURFACE_FILE. Source de verite unique — invoque par /dev, /hotfix, /plan.
 ---
 
 # Judge — sous-agent MÉTIER frais, UN SEUL round avant livraison
@@ -17,10 +17,12 @@ Toutes les sections sont des **RÈGLES ABSOLUES**.
 
 ## § ROUND JUGE UNIQUE — un seul checkpoint, un seul passage
 
-**S'applique EN SOLO COMME EN ORCHESTRÉ.** Le juge est un **sous-agent `judge`** (`Agent` tool, `subagent_type: "judge"`), lancé **par la surface elle-même**, en contexte frais, **synchrone** (`run_in_background: false` — on a besoin du verdict pour continuer). Il **remplace** le subagent `reviewer` à ce checkpoint.
+**S'applique EN SOLO COMME EN ORCHESTRÉ.** Le juge est un **sous-agent `judge`** (`Agent` tool, `subagent_type: "judge"`), lancé **par la surface elle-même**, en contexte frais. Il **remplace** le subagent `reviewer` à ce checkpoint.
+
+**LE JUGE EST ASYNCHRONE, ET ON NE PEUT PAS LE RENDRE SYNCHRONE.** Mesuré le 2026-10-02 : l'outil `Agent` de ce harnais n'expose aucun paramètre de synchronisation, et sa réponse immédiate ne porte qu'un `agentId` avec `status: "async_launched"`. La surface **lance le juge, puis ATTEND sa notification de fin** avant de créer la MR. Elle ne lance rien d'autre entre-temps qui dépende du verdict.
 
 **RÈGLE ABSOLUE — UN SEUL CHECKPOINT, À LA TOUTE FIN.**
-- `/dev` : step 4, `CHECKPOINT=pre-push` — **juste avant le push**, code écrit et tests verts.
+- `/dev` : step 4, `CHECKPOINT=pre-mr` — **implémentation terminée, juste avant `glab mr create`** (code écrit, tests verts, branche poussée). Un push de travail antérieur n'exige aucun juge.
 - `/hotfix` : step 7b, `CHECKPOINT=hotfix-verify` — même position.
 - `/plan` : step 10, `CHECKPOINT=plan-gate` — avant de passer le SPIKE en DONE (il n'y a pas de push à juger).
 
@@ -35,37 +37,58 @@ Toutes les sections sont des **RÈGLES ABSOLUES**.
 C'est **le juge** qui y append son compte rendu (`JUDGE-VERDICT: …` + preuves). La surface ne recopie rien.
 
 **Protocole :**
-1. **Lancer le juge** avec un prompt **auto-suffisant** (il vérifie tout lui-même, il n'a AUCUN contexte) :
+1. **Lancer le juge** avec un prompt **auto-suffisant** (il vérifie tout lui-même, il n'a AUCUN contexte). `REPORT_FILE` est **obligatoire** : c'est la preuve de secours que relit le gate.
    ```
-   Agent(subagent_type: "judge", run_in_background: false, description: "judge <T>", prompt:
-     "CHECKPOINT=<pre-push | hotfix-verify | plan-gate>  ROUND=1  TICKET=<T>
+   Agent(subagent_type: "judge", description: "judge <T>", prompt:
+     "CHECKPOINT=<pre-mr | hotfix-verify | plan-gate>  ROUND=1  TICKET=<T>
       WORKTREE=<chemin absolu>  BRANCH=<branche>   (plan-gate : UMBRELLA + clés des tickets créés + DAG, pas de diff)
       REPORT_FILE=<SURFACE_FILE>
       CONSIGNE=<le champ Prompt / la consigne exacte, verbatim>
       CE QUE JE PRÉTENDS AVOIR FAIT=<…, avec les CAS MÉTIER censés être couverts par les tests>")
    ```
-2. **Lire le verdict retourné** (et le compte rendu dans `SURFACE_FILE`) :
-   - `VERDICT: OK` → checkpoint franchi, pousser (le hook enregistre le verdict, le gate `pre-push` s'ouvre).
-   - `VERDICT: NEEDS_WORK` → § APRÈS UN NEEDS_WORK ci-dessous. **Ne pas relancer un juge de sa propre initiative.**
+2. **Attendre la fin du sous-agent**, puis **lire le verdict retourné** (et le compte rendu dans `SURFACE_FILE`) :
+   - `VERDICT: OK` → checkpoint franchi, créer la MR (le hook enregistre le verdict, le gate `pre-mr` s'ouvre).
+   - `VERDICT: NEEDS_WORK` → § APRÈS UN NEEDS_WORK ci-dessous : corriger avec preuve **puis livrer** — le gate `pre-mr` est déjà levé par le passage du juge. **Ne pas relancer un juge de sa propre initiative.**
 3. **Notifier** (mode orchestré, skill `malt-surface-exchange` § NOTIFICATION) : `note "$WF/_inbox/orchestrator.md" "<T>[dev]" "STEP:judge" "OK|NEEDS_WORK (<résumé>)"`.
 
 Le passage est **entièrement contenu dans la surface** : aucune attente inter-surfaces, aucun `await-note`.
 
-**HEURES CALMES 20h–7h** (CLAUDE.md) : un round de juge est un appel synchrone borné, pas un poll — il est autorisé. Ce qui reste interdit dans la plage : programmer un réveil/poll après le verdict.
+**HEURES CALMES 20h–7h** (CLAUDE.md) : un round de juge est un appel borné dont le harnais notifie la fin tout seul, pas un poll — il est autorisé. Ce qui reste interdit dans la plage : programmer un réveil/poll après le verdict.
 
 ---
 
-## § APRÈS UN NEEDS_WORK — corriger avec preuve, puis ESCALADER
+## § COMMENT LE PASSAGE DU JUGE EST CONSTATÉ — deux chemins, aucun à déclarer
+
+Le gate `pre-mr` ne croit ni la surface ni le message d'un hook. Il lit l'état, posé par l'un de ces deux chemins. **Les deux concluent sur un RÉSULTAT.** Aucun ne se déclenche au lancement : lancer un juge ne débloque rien.
+
+1. **Le hook `SubagentStop`** (`~/.claude/scripts/wf-subagent-hook.sh`). Il reçoit la conclusion finale réelle du sous-agent et pose `judge_ran_pre_mr`. C'est le chemin normal, rien à faire.
+2. **Le compte rendu**, si la notification de fin n'arrive pas. Le gate relit le `REPORT_FILE` donné au lancement et accepte une ligne `JUDGE-VERDICT:` **écrite après ce lancement**. Un verdict d'un round précédent déjà présent dans la même inbox ne lève donc rien.
+
+**Détection ancrée.** La conclusion du juge doit commencer par une ligne `VERDICT: OK` ou `VERDICT: NEEDS_WORK`, et son compte rendu porter `JUDGE-VERDICT: …` avec son horodatage. Un `NEEDS_WORK` l'emporte toujours sur un `OK` cité ailleurs dans le même texte.
+
+**Vérifier à la main en cas de doute :**
+
+```
+python3 ~/.claude/scripts/wf-state.py get judge_ran_pre_mr
+python3 ~/.claude/scripts/wf-signals.py verdict-file <REPORT_FILE> <epoch de lancement>
+```
+
+**Ne jamais poser le drapeau soi-même.** Si aucun des deux chemins ne constate le passage alors qu'un juge a réellement conclu, c'est un défaut d'outillage : le dire à l'utilisateur, ne pas écrire dans `_phase/*.json`.
+
+---
+
+## § APRÈS UN NEEDS_WORK — corriger avec preuve, puis CONTINUER
 
 Le round est unique : un `NEEDS_WORK` **ne se rattrape pas** par un second juge lancé tout seul. La suite est fixe :
 
 1. **Trier les GAPS.** Un GAP hors périmètre métier (lint, style, commentaire, test rouge, coverage) est du bruit : le noter et passer — les hooks et la CI s'en chargent.
 2. **Traiter toute l'étendue de chaque GAP métier**, pas seulement l'exemple cité (le juge dit « cas limite X non testé sur la méthode Y » → couvrir aussi les cas analogues de la même méthode).
 3. **Produire la preuve de clôture, lisible, GAP par GAP** : `path:line` du comportement métier désormais écrit, nom du test qui exerce le cas métier manquant et ce qu'il assert, endroit où la règle du domaine ignorée est appliquée. « Je pense l'avoir corrigé » sans `path:line` ni test cité = GAP encore ouvert.
-4. **Escalader à l'utilisateur** — onglet `[ASK]`, skill `asking-the-user` : les GAPS du juge, ce que j'ai corrigé avec les preuves ci-dessus, ce qui reste ouvert et pourquoi. **C'est lui qui tranche** : pousser tel quel, corriger autrement, ou autoriser explicitement un second juge.
-5. **Un second juge ne se lance QUE sur cette autorisation explicite.**
+4. **Continuer le workflow** — commit, push, création de MR, sans rien demander. Un `NEEDS_WORK` n'est pas un refus de livrer : c'est une liste de corrections à faire **maintenant**.
+5. **Rapporter, pas escalader** : les GAPS du juge, ce que j'ai corrigé avec les preuves ci-dessus, ce qui reste ouvert et pourquoi vont dans la **description de MR** et dans les **Tradeoffs** du LIVRABLE FINAL. Un `[ASK]` n'est dû que si un GAP ouvre une **décision d'archi ou de périmètre** que je ne peux pas trancher (skill `malt-workflow-commons` § DÉCISIONS D'ARCHI) — jamais pour obtenir un GO de MR.
+6. **Un second juge ne se lance QUE sur autorisation explicite de l'utilisateur.**
 
-**Conséquence sur le gate `pre-push`** (il exige un `VERDICT: OK` enregistré) : un `NEEDS_WORK` laisse le push refusé. Si l'utilisateur donne son GO sans nouveau juge, lever le gate en éditant `~/.claude/wf-gates.conf` → `pre-push = warn` (effet immédiat, relu à chaque appel), puis le remettre à `block` après le push. Ne jamais contourner le gate autrement.
+**Conséquence sur le gate `pre-mr`** : il exige un **passage** de juge, pas une approbation — un `VERDICT: NEEDS_WORK` enregistré lève le gate exactement comme un `OK`. Il n'y a donc jamais à toucher `~/.claude/wf-gates.conf` pour pousser après un `NEEDS_WORK`. Ce que le gate refuse toujours : ouvrir une MR **sans avoir été jugé du tout**. Un `git commit` postérieur ne re-bloque pas la MR — il périme l'approbation, pas le passage.
 
 ---
 

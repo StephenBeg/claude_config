@@ -1,4 +1,41 @@
 {
+  "env": {
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5"
+  },
+  "permissions": {
+    "allow": [
+      "mcp__notion__*",
+      "mcp__atlassian__*",
+      "mcp__idea__*",
+      "mcp__gitlab__*",
+      "mcp__miro__*",
+      "mcp__sentry__*",
+      "mcp__claude_ai_Slack__*",
+      "mcp__claude_ai_Figma__*",
+      "Read",
+      "Edit",
+      "Write",
+      "Bash",
+      "Bash(/Users/stephenbegot/.claude/scripts/malt-sql.sh:*)",
+      "Bash(~/.claude/scripts/malt-sql.sh:*)"
+    ],
+    "deny": [
+      "Bash(psql:*)",
+      "Bash(pgcli:*)",
+      "Bash(pg_dump:*)",
+      "Bash(pg_restore:*)",
+      "Bash(mongosh:*)",
+      "Bash(mongo:*)",
+      "Bash(mongoimport:*)",
+      "Bash(mongorestore:*)",
+      "Bash(malt pam:*)"
+    ],
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "/Users/stephenbegot"
+    ]
+  },
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -61,6 +98,15 @@
             "command": "/Users/stephenbegot/.claude/scripts/gate-skills.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/gate-prod-db.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -112,6 +158,34 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/stephenbegot/.claude/scripts/wf-subagent-hook.sh"
+          }
+        ]
+      }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "understand-anything@understand-anything": true
+  },
+  "extraKnownMarketplaces": {
+    "understand-anything": {
+      "source": {
+        "source": "github",
+        "repo": "Egonex-AI/Understand-Anything"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "autoCompactEnabled": true
 }

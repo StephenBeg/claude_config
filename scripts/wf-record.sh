@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
-# PostToolUse(Skill|Agent) — ENREGISTREUR D'ÉTAT.
+# PostToolUse(Skill|Agent|Task) — ENREGISTREUR D'ÉTAT, côté LANCEMENT.
 #
 # Les gates ne peuvent exiger une étape que si son accomplissement est OBSERVÉ.
-# Ce hook transforme trois événements réels en état persistant :
-#   Skill(<nom>)            -> skills=<csv>            (gate skill-required)
-#   Agent(judge) VERDICT OK -> judge_ok_pre_push=1     (gate pre-push, round unique)
-#   Agent(smoke-runner) BOOTED_OK -> smoke_ok=1        (gate pre-push)
-# Rien n'est déclaré par le LLM : tout est lu dans la réponse de l'outil.
+# Ce hook n'observe qu'un seul fait fiable sur un sous-agent : qu'il a été LANCÉ.
+#
+#   Skill(<nom>)        -> skills=<csv>                 (gate skill-required)
+#                          + workflow=<dev|plan|hotfix|orchestrator> (gate prod-db)
+#   Agent(<type>)       -> agent_<id>=<type>|<ckpt>|<report>|<epoch>
+#                          + judge_pending / smoke_pending
+#
+# AUCUN GATE N'EST LEVÉ ICI. Mesuré le 2026-10-02 : l'outil `Agent` est toujours
+# asynchrone dans ce harnais, `tool_response` vaut
+# {isAsync, status:"async_launched", agentId, prompt, outputFile, …} et le champ
+# `prompt` REJOUE la consigne. Grep ce blob, c'est grep la requête : un prompt de
+# smoke-runner qui nomme BOOTED_OK posait smoke_ok=1 avant tout démarrage.
+# Le verdict est posé par wf-subagent-hook.sh (SubagentStop), qui reçoit la
+# sortie finale réelle et le même agent_id.
 set -uo pipefail
 ST="python3 $HOME/.claude/scripts/wf-state.py"
+SIG="python3 $HOME/.claude/scripts/wf-signals.py"
 input="$(cat)"
 
 field() {
@@ -37,42 +47,56 @@ case "$tool" in
     case "$sk" in
       malt-accounting-domain|obsidian) $ST set preanalysis=1 ;;
     esac
+    case "$sk" in
+      dev|plan|hotfix|orchestrator) $ST set "workflow=$sk" ;;
+    esac
     ;;
   Agent|Task)
     at="$(field tool_input subagent_type)"
     pr="$(field tool_input prompt)"
-    rs="$(field tool_response)"
-    [[ -n "$rs" ]] || rs="$(printf '%s' "$input" | python3 -c 'import sys,json;d=json.load(sys.stdin);r=d.get("tool_response");print(r if isinstance(r,str) else json.dumps(r or ""))' 2>/dev/null)"
+    aid="$(field tool_response agentId)"
+    rs="$(printf '%s' "$input" | $SIG resp-text)"
+    now="$(date +%s)"
 
-    if printf '%s' "$rs" | grep -q 'BOOTED_OK'; then
-      $ST set smoke_ok=1
-      msgs+=("SMOKE-RUN enregistré (BOOTED_OK) : le gate pre-push est levé sur ce point.")
-    fi
+    # Le CHECKPOINT déclaré dit à QUEL gate ce juge est destiné, il ne lève rien
+    # tout seul. Le ranger d'après la déclaration, jamais d'après une sous-chaîne
+    # du prompt : un juge pre-mr qui MENTIONNE plan-gate était classé en plan-gate.
+    ckpt="$(printf '%s' "$pr" | sed -n 's/.*CHECKPOINT=\([a-z-]*\).*/\1/p' | head -1)"
+    case "$ckpt" in
+      plan-gate|pre-mr|pre-push|hotfix-verify) : ;;
+      *) printf '%s' "$pr" | grep -q 'plan-gate' && ckpt=plan-gate || ckpt=pre-mr ;;
+    esac
+    report="$(printf '%s' "$pr" | sed -nE 's/.*REPORT_FILE=("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^ ]+)).*/\2\3\4/p' | head -1)"
+    report="${report/#\~/$HOME}"
 
-    if [[ "$at" == "judge" ]] || printf '%s' "$pr" | grep -q 'CHECKPOINT='; then
-      # Ranger le verdict d'apres le CHECKPOINT DECLARE, jamais d'apres une
-      # sous-chaine du prompt : un juge pre-push qui MENTIONNE plan-gate
-      # etait classe en plan-gate -> push refuse a tort.
-      plan_gate=0
-      ckpt="$(printf '%s' "$pr" | sed -n 's/.*CHECKPOINT=\([a-z-]*\).*/\1/p' | head -1)"
-      case "$ckpt" in
-        plan-gate)              plan_gate=1 ;;
-        pre-push|hotfix-verify) plan_gate=0 ;;
-        *) printf '%s' "$pr" | grep -q 'plan-gate' && plan_gate=1 ;;
+    if [[ -n "$aid" ]]; then
+      $ST prune-agents
+      $ST set "agent_$aid=$at|$ckpt|$report|$now"
+      case "$at" in
+        judge)        $ST set "judge_pending=$ckpt|$report|$now" ;;
+        smoke-runner) $ST set "smoke_pending=$report|$now" ;;
       esac
-      if printf '%s' "$rs" | grep -Eq 'VERDICT:? *OK'; then
-        if [[ $plan_gate -eq 1 ]]; then
-          $ST set judge_ok_plan=1
-          msgs+=("JUGE (plan-gate) OK enregistré.")
-        else
-          $ST set judge_ok_pre_push=1
-          msgs+=("JUGE (pre-push) OK enregistré : le push est débloqué. Tout nouveau commit REMET ce verdict à zéro (le juge n'a pas vu ce code).")
-        fi
-      elif printf '%s' "$rs" | grep -Eq 'VERDICT:? *NEEDS_WORK'; then
-        r="$($ST get judge_round)"; r="${r:-0}"
-        $ST set "judge_round=$((r + 1))"
-        msgs+=("JUGE NEEDS_WORK (round $((r + 1))). RÈGLE ABSOLUE malt-judge-loop : le juge ne passe QU'UNE FOIS. Traiter toute l'etendue de chaque GAP METIER (pas seulement l'exemple cite), appliquer le fix, produire la PREUVE LISIBLE que le GAP est clos (path:line du comportement metier desormais ecrit, nom du cas de test metier ajoute), puis ESCALADER [ASK] a l'utilisateur avec GAPS + corrections + preuves. Un second juge ne se lance QUE sur son autorisation explicite. Un GAP de lint/style/commentaire/test rouge remonte par erreur est du bruit : le noter et passer.")
+      msgs+=("SOUS-AGENT « $at » lancé en asynchrone (id $aid). AUCUN gate n'est levé par un lancement : l'état sera posé par le hook SubagentStop quand la conclusion réelle arrivera. Attendre cette conclusion avant l'étape qu'elle débloque.")
+    else
+      # Chemin synchrone : ne vaut que si la réponse porte un VRAI résultat
+      # (les champs d'écho ont été retirés par wf-signals.py resp-text).
+      case "$at" in smoke-runner) sv="$(printf '%s' "$rs" | $SIG smoke-text)" ;; *) sv=NONE ;; esac
+      case "$sv" in
+        BOOTED_OK)
+          $ST set smoke_ok=1
+          msgs+=("SMOKE-RUN enregistré (BOOTED_OK rendu par le sous-agent) : le gate pre-push est levé sur ce point.") ;;
+      esac
+      if [[ "$at" == "judge" ]] || printf '%s' "$pr" | grep -q 'CHECKPOINT='; then
+        v="$(printf '%s' "$rs" | $SIG verdict-text)"
+      else
+        v=NONE
       fi
+      case "$v" in
+        OK|NEEDS_WORK)
+          if [[ "$ckpt" == "plan-gate" ]]; then $ST set judge_ran_plan=1; else $ST set judge_ran_pre_mr=1; fi
+          [[ "$v" == "OK" ]] && { [[ "$ckpt" == "plan-gate" ]] && $ST set judge_ok_plan=1 || $ST set judge_ok_pre_mr=1; }
+          msgs+=("JUGE ($ckpt) $v enregistré : le passage de juge est acquis, le gate pre-mr est levé.") ;;
+      esac
     fi
     ;;
 esac

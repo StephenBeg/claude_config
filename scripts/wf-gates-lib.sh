@@ -115,3 +115,24 @@ gate_is_quiet_hours() {
   local h; h="${WF_FAKE_HOUR:-$(date +%H)}"
   [[ 10#$h -ge 20 || 10#$h -lt 7 ]]
 }
+
+# --- preuve par ARTEFACT (second chemin, indépendant de SubagentStop) ---------
+# Un gate doit rester levable même si l'événement de fin de sous-agent ne tire
+# pas (sous-agent tué, session dont le snapshot de hooks ne le porte pas). Le
+# compte rendu du sous-agent est alors la preuve : il n'existe qu'une fois le
+# travail fini, et il n'est accepté que s'il est POSTÉRIEUR au lancement, sinon
+# un verdict d'un round précédent présent dans la même inbox lèverait le gate.
+gate_proof() {  # $1 = verdict-file|smoke-file, $2 = clé pending -> 0 si preuve fraîche
+  local kind="$1" pend ckpt report since v
+  pend="$($ST get "$2")"
+  [[ -n "$pend" ]] || return 1
+  if [[ "$2" == "judge_pending" ]]; then
+    IFS='|' read -r ckpt report since <<<"$pend"
+    [[ "$ckpt" == "plan-gate" ]] && return 1
+  else
+    IFS='|' read -r report since <<<"$pend"
+  fi
+  [[ -n "$report" && -r "$report" ]] || return 1
+  v="$(python3 "$HOME/.claude/scripts/wf-signals.py" "$kind" "$report" "${since:-0}" 2>/dev/null)"
+  case "$v" in OK|NEEDS_WORK|BOOTED_OK) return 0 ;; *) return 1 ;; esac
+}

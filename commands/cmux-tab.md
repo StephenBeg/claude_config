@@ -31,9 +31,9 @@ $ARGUMENTS
 
 **L'orchestration (fan-out, await, RESCAN, drainage) est portée par la commande `/orchestrator`, pas par `/plan`.** Ce script fournit les primitives ; `/orchestrator` les pilote.
 
-## `spawn` — nouvel onglet claude (opus 5) + prompt
+## `spawn` — nouvel onglet claude (opus 5.5) + prompt
 
-`spawn` crée un **nouvel onglet dans le workspace COURANT** (`new-surface`, pas un nouveau workspace), y lance `claude --model claude-opus-5` avec le prompt fourni (via `send`), et lui donne le focus.
+`spawn` crée un **nouvel onglet dans le workspace COURANT** (`new-surface`, pas un nouveau workspace), y lance `claude --model 'claude-opus-5-5[1m]'` avec le prompt fourni (via `send`), et lui donne le focus.
 
 - `<prompt>` (requis) : envoyé tel quel à claude (shell-safe via `printf %q`).
 - `<titre>` (optionnel, défaut `claude opus`) : nom de l'onglet.

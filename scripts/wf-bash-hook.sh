@@ -32,9 +32,14 @@ out=$(printf '%s' "$input" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
 r = d.get("tool_response")
-print((r if isinstance(r, str) else json.dumps(r or "")).replace("\n", " ")[:4000])
+print((r if isinstance(r, str) else json.dumps(r or "")).replace("\n", " ")[-200000:])
 ' 2>/dev/null) || out=""
 payload="$cmd $out"
+
+# Un enregistrement conclut sur le RÉSULTAT : une commande dont la sortie dit
+# qu'elle a échoué ne pose aucun état. Sans ça un merge refusé posait merged=1,
+# et la fin de tour exigeait un /end sur une MR jamais mergée.
+failed() { printf '%s' "$out" | grep -Eqi '! \[rejected\]|\berror\b|\bfatal\b|\bfailed\b|\bdenied\b|\b4[0-9]{2}\b|\b5[0-9]{2}\b'; }
 
 msgs=()
 note() { msgs+=("$1"); }
@@ -45,12 +50,20 @@ note() { msgs+=("$1"); }
 invoked() { printf '%s' "$cmd" | grep -Eq "(^|[;&|(] *)($1)"; }
 
 if invoked 'git +worktree +add'; then
+  # Un nouveau worktree = un nouveau ticket : les preuves du precedent ne valent
+  # plus rien. Sans cette remise a zero, un judge_ran_pre_mr acquis sur le ticket
+  # d'avant ouvrirait la MR du suivant sans aucun juge.
+  $ST set judge_ran_pre_mr= judge_ok_pre_mr= judge_ran_plan= judge_ok_plan= judge_pending= \
+         judge_round= smoke_ok= smoke_pending= tests_green= rebased_skipci= \
+         last_push_at= mr= merged= end_done= livrable_done=
   [[ "$($ST get phase)" =~ ^(IMPL|PIPE|MR|CLEAN|END)$ ]] || "$TAB" phase IMPL >/dev/null 2>&1
 fi
 
 # MR créée : l'IID sort dans l'URL renvoyée par glab (…/merge_requests/1234).
 if invoked 'glab +mr +(create|new)'; then
-    iid=$(printf '%s' "$payload" | grep -oE 'merge_requests/[0-9]+' | grep -oE '[0-9]+' | head -1)
+    # L'IID vient de la SORTIE (l'URL que glab renvoie), jamais de la commande :
+    # un IID lu dans la requête enverrait le gate mr-merge vérifier une autre MR.
+    iid=$(printf '%s' "$out" | grep -oE 'merge_requests/[0-9]+' | grep -oE '[0-9]+' | head -1)
     if [[ -n "$iid" ]]; then
       "$TAB" mr "$iid" >/dev/null 2>&1
       "$TAB" phase MR >/dev/null 2>&1
@@ -70,7 +83,7 @@ if invoked 'git +push'; then
   note "RAPPEL (post-push) : terminer la réponse par le BLOC DE CLÔTURE — 'Travail poussé sur : <branche>' + description MR générée via /gitlab-resume (Jira / App / Feature Flag / Comment)."
 fi
 
-if invoked 'glab +mr +merge'; then
+if invoked 'glab +mr +merge' && ! failed; then
   $ST set merged=1
   "$TAB" phase CLEAN >/dev/null 2>&1
   note "MR MERGÉE -> il RESTE 3 obligations, dans cet ordre : (1) statut JIRA 'To Validate' ; (2) lancer /end (log du jour + tradeoffs en commentaire JIRA) ; (3) clean du worktree puis header [END]. Le hook Stop BLOQUERA la fin de tour tant que /end n'est pas écrit."
@@ -85,28 +98,38 @@ fi
 # Tests verts : exige une TÂCHE DE TEST dans la commande ET un succès dans la sortie.
 # (Un `BUILD SUCCESSFUL` de compilation ne prouve aucun test — mémoire :
 #  un vert Gradle exige des preuves cumulatives.)
+# La sortie est gardée par la QUEUE : `BUILD SUCCESSFUL` sort en dernier, une
+# troncature en tête rendait le gate pre-push insatisfiable sur une suite longue.
 if printf '%s' "$cmd" | grep -Eq 'gradlew[^|]*(test|check)|pnpm[^|]*test|vitest|jest'; then
   printf '%s' "$out" | grep -Eq 'BUILD SUCCESSFUL|[0-9]+ (tests? )?passed|Tests? passed|PASS ' \
     && $ST set tests_green=1
 fi
 
 # Smoke-run observé en direct (hors subagent smoke-runner).
-printf '%s' "$out" | grep -Eq 'Started [A-Za-z]*Application in' && $ST set smoke_ok=1
+# Les apps Kotlin loguent `Started AccountingApplicationKt in` : sans le `Kt`
+# optionnel le motif rate le seul succès qu'il doit reconnaître.
+printf '%s' "$out" | grep -Eq 'Started [A-Za-z]*Application(Kt)? in' && $ST set smoke_ok=1
 
-# Un commit PÉRIME le verdict du juge : il n'a pas vu ce code.
+# Un commit PÉRIME l'APPROBATION du juge (il n'a pas vu ce code), pas le fait
+# qu'un round de jugement ait eu lieu : judge_ran_pre_mr survit, donc corriger
+# les GAPS d'un NEEDS_WORK puis committer ne re-bloque pas la création de MR.
 if invoked 'git +commit'; then
-  $ST set judge_ok_pre_push=
-  note "COMMIT : verdict du juge remis à zéro (le juge n'a pas vu ce code). Un juge FRAIS est dû avant le 1er push — le gate pre-push le refusera sinon."
+  $ST set judge_ok_pre_mr=
 fi
 
 # Rebase skip_ci=true : précondition du merge (inspecté sur la commande BRUTE,
 # l'URL vit entre quotes).
 printf '%s' "$cmd_raw" | grep -Eq 'merge_requests/[0-9]+/rebase' \
   && printf '%s' "$cmd_raw" | grep -q 'skip_ci=true' \
+  && ! failed \
   && $ST set rebased_skipci=1
 
 # Push de ce tour : le hook Stop exige le BLOC DE CLÔTURE dans la réponse.
-invoked 'git +push' && $ST set pushed_turn=1
+# last_push_at date le dernier push RÉEL : c'est lui qui périme un Approved,
+# pas le rebase d'API que la procédure de merge prescrit juste avant.
+if invoked 'git +push' && ! failed; then
+  $ST set pushed_turn=1 "last_push_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
 
 # ANTI-VEILLE (CLAUDE.md) : un process long ne doit pas être coupé par la veille.
 # Le hook le fait LUI-MÊME au lieu de le rappeler — et vérifie d'abord qu'un
