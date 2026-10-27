@@ -1,13 +1,13 @@
 ---
 name: malt-prod-sql
-description: Interroger la base PostgreSQL Malt (prod ou integration, Cloud SQL) en LECTURE SEULE via le tunnel cloudflared. PROD = /hotfix UNIQUEMENT (diagnostic d'un bug) ; /plan, /dev, /orchestrator et session libre n'y touchent jamais (gate prod-db). Integration lisible partout via --env integ.
+description: Interroger la base PostgreSQL Malt (prod ou integration, Cloud SQL) en LECTURE SEULE via le tunnel cloudflared. PROD = /hotfix (diagnostic d'un bug) et /scan (etude statistique) UNIQUEMENT ; /plan, /dev, /orchestrator et session libre n'y touchent jamais (gate prod-db). Integration lisible partout via --env integ.
 ---
 
 # malt-prod-sql — lecture SQL prod/integ en CLI
 
-## PRÉALABLE — LA PROD N'EST OUVERTE QU'À `/hotfix`
+## PRÉALABLE — LA PROD N'EST OUVERTE QU'À `/hotfix` ET `/scan`
 
-Seul `/hotfix` lit la base de prod, pour diagnostiquer un bug sur des données réelles. Dans `/plan`, `/dev`, `/orchestrator` ou une session libre : ne pas charger ce skill pour la prod, ne demander ni tunnel ni `gcloud auth` à l'utilisateur. Le gate `prod-db` refuse ce skill, `malt-sql.sh` sans `--env integ`, `malt tunnel start pg-prod|mongo-prod*` et `gcloud sql generate-login-token` tant que le workflow courant n'est pas `hotfix`. Hors hotfix, `--env integ` reste autorisé.
+Seuls `/hotfix` (diagnostiquer un bug sur des données réelles) et `/scan` (étude statistique, agrégats uniquement) lisent la base de prod. Dans `/plan`, `/dev`, `/orchestrator` ou une session libre : ne pas charger ce skill pour la prod, ne demander ni tunnel ni `gcloud auth` à l'utilisateur. Le gate `prod-db` refuse ce skill, `malt-sql.sh` sans `--env integ`, `malt tunnel start pg-prod|mongo-prod*` et `gcloud sql generate-login-token` tant que le workflow courant n'est ni `hotfix` ni `scan`. Ailleurs, `--env integ` reste autorisé.
 
 ## RÈGLE ABSOLUE — LECTURE SEULE, SANS EXCEPTION
 

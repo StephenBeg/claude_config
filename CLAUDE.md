@@ -22,12 +22,13 @@ Direct, zéro blabla. Montrer le raisonnement, jamais d'hypothèse silencieuse. 
 
 ## WORKFLOWS — dispatcher
 
-Choisir **avant toute action**. Signal : un numéro de ticket JIRA en entrée → `/dev` ; besoin large sans ticket → `/plan` ; bug signalé sans ticket → `/hotfix`. Le détail de chaque workflow vit dans sa commande ; ne pas le dupliquer ici.
+Choisir **avant toute action**. Signal : un numéro de ticket JIRA en entrée → `/dev` ; besoin large sans ticket → `/plan` ; bug signalé sans ticket → `/hotfix` ; question statistique sur les données réelles → `/scan`. Le détail de chaque workflow vit dans sa commande ; ne pas le dupliquer ici.
 
 - **`/plan`** — planificateur PUR : analyse, plan + DAG, tickets JIRA parallélisables, spike DONE. Ne spawn rien ; au GO il passe le relais à `/orchestrator`.
 - **`/orchestrator`** — propriétaire UNIQUE du fan-out CMUX et du cycle de vie des tickets d'un chantier planifié. **Un seul par workspace.**
 - **`/dev`** — un ticket JIRA implémenté de bout en bout (worktree → tests → MR → pipeline → statuts). Ne jamais merger la MR soi-même.
 - **`/hotfix`** — diagnostic → cause racine → crée son ticket → implémente.
+- **`/scan`** — étude statistique en lecture seule sur la prod : agrégats seulement, ni code, ni ticket, ni MR.
 - **Le juge est un sous-agent MÉTIER, pas une surface — UN SEUL round, à UN SEUL checkpoint, juste avant la livraison** (`pre-mr` pour `/dev` — implémentation terminée, avant `glab mr create` ; `hotfix-verify` pour `/hotfix` ; `plan-gate` pour `/plan`). Pas de gate juge pré-impl, pas de boucle : `NEEDS_WORK` → fermer les GAPS avec preuve **puis continuer** (le push reste ouvert ; rapporter GAPS, corrections et reste ouvert dans la MR et les Tradeoffs). Jamais de round 2, jamais de GO à demander pour pousser. Il ne juge QUE le métier (besoin couvert, meilleure solution, pièges du domaine, cas de test métier) — **jamais** lint, style, commentaires, tests rouges, coverage ; **il ne lance ni build ni test**. Protocole : skill `malt-judge-loop`.
 
 ## ÉTAT DE WORKFLOW — OUTILLÉ, PAS DÉCLARATIF
@@ -56,7 +57,7 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 | `end-gate` · `closing-block` · `jira-status` · `livrable` | **clore le tour** : MR mergée sans `/end` écrit dans le log du jour · push sans bloc de clôture dans la réponse · ticket pas en `To Validate` · pas de tableau LIVRABLE FINAL avec Tradeoffs |
 | `tmp-ban` | tout chemin `/tmp`, `/private/tmp`, `/var/folders` (y compris le scratchpad proposé par le harness) — seule exception : `mktemp` consommé dans la même commande |
 | `quiet-hours` | entre 20h00 et 07h00 : `ScheduleWakeup`, `CronCreate`, `/loop`, boucle `until` en background, réveil de surface, spawn d'`/orchestrator`. Un round de juge reste autorisé |
-| `prod-db` | lire la base de prod hors `/hotfix` : `malt-sql.sh` sans `--env integ`, tunnel `pg-prod`/`mongo-prod*`, token Cloud SQL, skill `malt-prod-sql` |
+| `prod-db` | lire la base de prod hors `/hotfix` et `/scan` : `malt-sql.sh` sans `--env integ`, tunnel `pg-prod`/`mongo-prod*`, token Cloud SQL, skill `malt-prod-sql` |
 | `external-lang` | écriture JIRA / GitLab / Notion contenant du français (exception : `customfield_11956`) |
 | `skill-required` | éditer un `.vue`, un test, un contrat d'API, une migration, `erp/accounting*` sans avoir chargé le skill du domaine |
 | `prose-required` *(warn)* | écrire du code sans le skill `claude-prose` — rappelle la barre (clair, lisible, concis ; commentaires 0 par défaut, plafond 1-2 lignes) |
@@ -74,9 +75,9 @@ Les règles ci-dessous ne sont plus seulement écrites : elles sont **exécutée
 - **Un message de refus décrit une sortie praticable.** Un gate qui prescrit un paramètre ou un outil inexistant coûte plus cher qu'un gate absent : il envoie dans une impasse avec l'autorité d'une règle.
 - **Un nouveau gate se vérifie avant d'exister** : `tests/gates_class_guard.py` refuse une clé d'état qu'aucun hook n'écrit, une prescription inexistante, un gate sans cran dans `wf-gates.conf` ou absent de cette table, et tout état posé au lancement d'un sous-agent.
 
-## BASE DE PROD — `/hotfix` SEULEMENT — RÈGLE ABSOLUE
+## BASE DE PROD — `/hotfix` ET `/scan` SEULEMENT — RÈGLE ABSOLUE
 
-**Seul `/hotfix` lit la base de prod** (diagnostic d'un bug sur des données réelles). `/plan`, `/dev`, `/orchestrator`, une session libre et leurs sous-agents n'y touchent jamais et **ne demandent jamais** d'accès DB, de tunnel ni de `gcloud auth` à l'utilisateur. Les vraies données ancrent la session sur un cas particulier et la font dériver : travailler depuis le code, les contrats, les tests et les fixtures ; une hypothèse sur les données reste marquée « non vérifiée ». L'intégration reste lisible (`malt-sql.sh --env integ`). Un vrai bug de prod en vue → proposer `/hotfix`. *(Gate `prod-db`.)*
+**Seuls `/hotfix` (diagnostic d'un bug sur des données réelles) et `/scan` (étude statistique, agrégats uniquement) lisent la base de prod.** `/plan`, `/dev`, `/orchestrator`, une session libre et leurs sous-agents n'y touchent jamais et **ne demandent jamais** d'accès DB, de tunnel ni de `gcloud auth` à l'utilisateur. Les vraies données ancrent la session sur un cas particulier et la font dériver : travailler depuis le code, les contrats, les tests et les fixtures ; une hypothèse sur les données reste marquée « non vérifiée ». L'intégration reste lisible (`malt-sql.sh --env integ`). Un vrai bug de prod en vue → proposer `/hotfix` ; un besoin de chiffres réels → proposer `/scan`. *(Gate `prod-db`.)*
 
 ## COUVERTURE DE CODE — RÈGLE ABSOLUE
 

@@ -101,6 +101,8 @@ Quand le `/plan` racine a découpé par **domaine** et créé un ticket spike-pl
 
 ## Rappels transverses (voir CLAUDE.md et skill `malt-workflow-commons`)
 
+- **GARDE DE DESTINATAIRE** (skill commons § GARDE DE DESTINATAIRE) : plusieurs orchestrateurs et enfants coexistent, l'utilisateur se trompe d'onglet. Toute demande de l'utilisateur hors de MON EPIC (autre chantier, ticket d'un autre orchestrateur, question posée par un enfant) : le dire en première ligne, nommer la bonne surface ou le bon orchestrateur, proposer de transmettre. Ne la traiter ici que sur confirmation explicite, et s'arrêter à sa livraison sans adopter le DAG voisin.
+
 - **DISCIPLINE DE COMMENTAIRE** (skill commons § DISCIPLINE DE COMMENTAIRE) : défaut = aucun commentaire ; plafond dur 1-2 lignes ; jamais d'explication métier (elle vit dans JIRA), jamais de récit de ticket ni de reformulation du nom. Le raisonnement va dans la description de MR et le commentaire JIRA de tradeoffs, pas dans le source. Relire les `+` de commentaire du diff avant de pousser.
 - **ORCHESTRATION PAR SOUS-AGENTS** (skill `malt-orchestration`) : déléguer les lectures JIRA lourdes / analyses de DAG à des sous-agents ; CONCLUSION, pas dumps.
 - **GIT WORKFLOW** (CLAUDE.md) : l'orchestrateur ne code pas, ne touche jamais master. Les enfants créent leurs worktrees.

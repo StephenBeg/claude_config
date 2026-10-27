@@ -19,8 +19,8 @@ ST="python3 $HOME/.claude/scripts/wf-state.py"
 input=$(cat)
 prompt=$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("prompt","") or "")' 2>/dev/null) || prompt=""
 
-# Workflow courant, lu par le gate prod-db (la base de prod n'est ouverte qu'à /hotfix).
-wf=$(printf '%s' "$prompt" | sed -nE '1s#^[[:space:]]*/(dev|plan|hotfix|orchestrator)([[:space:]].*)?$#\1#p; s#.*<command-name>/?(dev|plan|hotfix|orchestrator)</command-name>.*#\1#p' | head -1)
+# Workflow courant, lu par le gate prod-db (la base de prod n'est ouverte qu'à /hotfix et /scan).
+wf=$(printf '%s' "$prompt" | sed -nE '1s#^[[:space:]]*/(dev|plan|hotfix|orchestrator|scan)([[:space:]].*)?$#\1#p; s#.*<command-name>/?(dev|plan|hotfix|orchestrator|scan)</command-name>.*#\1#p' | head -1)
 [[ -n "$wf" ]] && $ST set "workflow=$wf"
 
 phase="$($ST get phase)"

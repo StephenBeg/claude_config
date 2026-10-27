@@ -5,7 +5,7 @@
 # Ce hook n'observe qu'un seul fait fiable sur un sous-agent : qu'il a été LANCÉ.
 #
 #   Skill(<nom>)        -> skills=<csv>                 (gate skill-required)
-#                          + workflow=<dev|plan|hotfix|orchestrator> (gate prod-db)
+#                          + workflow=<dev|plan|hotfix|orchestrator|scan> (gate prod-db)
 #   Agent(<type>)       -> agent_<id>=<type>|<ckpt>|<report>|<epoch>
 #                          + judge_pending / smoke_pending
 #
@@ -48,7 +48,7 @@ case "$tool" in
       malt-accounting-domain|obsidian) $ST set preanalysis=1 ;;
     esac
     case "$sk" in
-      dev|plan|hotfix|orchestrator) $ST set "workflow=$sk" ;;
+      dev|plan|hotfix|orchestrator|scan) $ST set "workflow=$sk" ;;
     esac
     ;;
   Agent|Task)

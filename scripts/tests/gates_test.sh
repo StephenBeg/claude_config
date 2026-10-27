@@ -307,7 +307,7 @@ state_empty "smoke-run du ticket precedent efface" smoke_ok
 state_empty "MR du ticket precedent effacee" mr
 $ST reset
 
-echo "== prod-db : la base de prod n'est ouverte qu'à /hotfix =="
+echo "== prod-db : la base de prod n'est ouverte qu'à /hotfix et /scan =="
 $ST reset
 SQL="$HOME/.claude/scripts/malt-sql.sh"
 t "malt-sql.sh prod sans workflow"            2 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
@@ -327,6 +327,14 @@ printf '%s' '{"prompt":"vérifie aussi\n/dev ne doit pas basculer"}' | ./wf-prom
 t "un /dev en milieu de prompt garde /hotfix" 0 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
 printf '%s' '{"source":"startup"}' | ./wf-session-start-hook.sh >/dev/null 2>&1
 t "session neuve : /hotfix précédent oublié"  2 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
+printf '%s' '{"prompt":"/scan freelances FR micro par subsidiary"}' | ./wf-prompt-hook.sh >/dev/null 2>&1
+t "malt-sql.sh prod en /scan"                 0 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
+t "skill malt-prod-sql en /scan"              0 gate-prod-db.sh "$(pay Skill "$HOME" "skill=malt-prod-sql")"
+printf '%s' '{"source":"startup"}' | ./wf-session-start-hook.sh >/dev/null 2>&1
+printf '%s' "$(pay Skill "$HOME" "skill=scan")" | ./wf-record.sh >/dev/null 2>&1
+t "skill scan ouvre la prod"                  0 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
+printf '%s' '{"source":"startup"}' | ./wf-session-start-hook.sh >/dev/null 2>&1
+t "session neuve : /scan précédent oublié"    2 gate-prod-db.sh "$(pay Bash "$HOME" "command=$SQL \"SELECT 1\"")"
 $ST reset
 
 echo "== GARDE-FOU DE CLASSE : tout gate doit être levable et non dupable =="

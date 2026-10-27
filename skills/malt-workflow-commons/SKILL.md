@@ -1,6 +1,6 @@
 ---
 name: malt-workflow-commons
-description: Regles communes a /dev, /plan, /hotfix : questions a choix, escalade des decisions d'archi, acces JIRA, creation de ticket JIRA (statut Ready obligatoire), prefixes de header CMUX, verification des sources contre le reel, boucles de controle, smoke-run local, /end avec MR, travail decouvert, livrable final. A invoquer en PREMIER dans ces trois workflows.
+description: Regles communes a /dev, /plan, /hotfix, /orchestrator : garde de destinataire (signaler a l'utilisateur qu'il parle a la mauvaise surface), questions a choix, escalade des decisions d'archi, acces JIRA, creation de ticket JIRA (statut Ready obligatoire), prefixes de header CMUX, verification des sources contre le reel, boucles de controle, smoke-run local, /end avec MR, travail decouvert, livrable final. A invoquer en PREMIER dans ces trois workflows.
 ---
 
 # Workflow commons — /dev · /plan · /hotfix
@@ -8,6 +8,20 @@ description: Regles communes a /dev, /plan, /hotfix : questions a choix, escalad
 Bloc de règles **partagées** par les trois workflows. Source de vérité UNIQUE : ne jamais recopier ces sections dans une commande — la commande invoque ce skill et renvoie à la section par son nom. Chaque commande **invoque ce skill en premier**, puis suit ses étapes propres.
 
 Toutes les sections sont des **RÈGLES ABSOLUES**. Une commande peut n'utiliser qu'un sous-ensemble (ex : `/plan` n'a ni smoke-run ni MR ; `/orchestrator` est le seul à porter `[ORCH]` en continu — `/plan` planifie puis passe le relais et ne supervise rien).
+
+---
+
+## § GARDE DE DESTINATAIRE — SUIS-JE LA BONNE SURFACE ?
+
+L'utilisateur jongle entre plusieurs onglets CMUX (orchestrateurs, enfants `/dev`, `/plan`, `/hotfix`) et se trompe régulièrement de destinataire. **À chaque message de l'utilisateur, avant d'agir**, vérifier que la demande relève de MON périmètre : mon ticket pour `/dev`, `/hotfix` et `/plan`, mon EPIC et son DAG pour `/orchestrator`. Les réveils `[CMUX-WAKE]` et les prompts de cron sont déjà routés : ils ne sont pas concernés.
+
+**Signes d'une demande mal adressée :** elle nomme un ticket, une MR, une branche ou un chantier qui n'est pas le mien ; elle porte sur un domaine sans lien avec mon périmètre (ex. `netsuite-connector` envoyé à l'orchestrateur billing) ; elle répond à une question qu'une autre surface a posée ; elle vise un ticket frère du même EPIC tenu par un autre orchestrateur.
+
+**Si la demande semble mal adressée : ne pas l'exécuter.** La première ligne de la réponse le dit : « Je pense que tu t'es trompé de surface : je suis `<rôle>` de `<ticket ou EPIC>`, et ta demande concerne `<X>`. » Puis :
+1. **Trouver la bonne surface** : `grep -l "TICKET=<X>" ~/claude-exchange-llm/*/*.md`, `~/claude-exchange-llm/*/_status/<X>.status` (champ `surface=`), en-tête `ORCH_SURFACE=` de l'inbox trouvée, `cmux list-panels`. Donner à l'utilisateur la cible précise (surface, inbox, orchestrateur), ou dire qu'aucune surface ne porte ce sujet.
+2. **Proposer** (§ QUESTIONS À CHOIX DE RÉPONSES) : transmettre la demande dans l'inbox de la bonne surface (note + réveil), ou la traiter ici si l'utilisateur le confirme explicitement.
+
+**Si l'utilisateur confirme qu'il me la confie quand même :** la traiter, rappeler en une ligne qu'elle est hors périmètre, et **s'arrêter à sa livraison**. Ne pas adopter le DAG voisin, ne pas suivre ni remonter ses dépendants.
 
 ---
 

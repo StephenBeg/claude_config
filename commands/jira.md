@@ -97,6 +97,14 @@ TID=$(curl -s "${AUTH[@]}" "$API/issue/SM-1507/transitions" \
   | python3 -c 'import sys,json;n=sys.argv[1].lower();[print(t["id"]) for t in json.load(sys.stdin)["transitions"] if t["name"].lower()==n]' "In Progress")
 ```
 
+### Link "B is blocked by A" (verified 2026-10-19)
+`inwardIssue` = the BLOCKER, `outwardIssue` = the blocked one. The intuitive reverse produces "B blocks A". Re-read `fields=issuelinks` after creating.
+```sh
+curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issueLink" \
+  -d '{"type":{"name":"Blocks"},"inwardIssue":{"key":"A"},"outwardIssue":{"key":"B"}}'   # 201
+```
+BILL has no `Story` issue type: types are Task, Sub-task, Epic, Bug, Support (umbrella = Task, children = Sub-task).
+
 ### Add a comment
 ```sh
 curl -s "${AUTH[@]}" "${JSON[@]}" -X POST "$API/issue/SM-1507/comment" \

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash|Skill) — la base de PROD n'est ouverte qu'à /hotfix.
+# PreToolUse(Bash|Skill) — la base de PROD n'est ouverte qu'à /hotfix et /scan.
 #
 # /plan, /dev, /orchestrator et une session libre n'ont jamais besoin de vraies
 # données : elles ancrent la session sur un cas particulier et la font dériver.
-# Seul un diagnostic de bug (/hotfix) lit la prod. Le workflow courant est posé
-# par wf-prompt-hook.sh (slash command tapée) et wf-record.sh (Skill invoqué).
+# Seuls un diagnostic de bug (/hotfix) et une étude statistique (/scan) lisent la
+# prod. Le workflow courant est posé par wf-prompt-hook.sh (slash command tapée)
+# et wf-record.sh (Skill invoqué).
 #
-# Refusé hors workflow=hotfix : malt-sql.sh en env prod (défaut), ouverture d'un
+# Refusé hors workflow=hotfix|scan : malt-sql.sh en env prod (défaut), ouverture d'un
 # tunnel pg-prod / mongo-prod*, mint d'un token Cloud SQL, skill malt-prod-sql.
 # Autorisé partout : malt-sql.sh --env integ.
 #
@@ -18,8 +19,8 @@ INPUT="$(cat)"
 TOOL="$(gate_field tool_name)"
 
 wf="$($ST get workflow)"
-[[ "$wf" == "hotfix" ]] && exit 0
-why="la base de prod est réservée à /hotfix (workflow courant : ${wf:-aucun}). Hors hotfix, ne PAS demander d'accès DB, de tunnel ni de gcloud auth à l'utilisateur : travailler depuis le code, les contrats, les tests et les fixtures ; une hypothèse sur les données réelles reste marquée « non vérifiée ». Lire l'intégration reste possible : malt-sql.sh --env integ. Si un vrai bug de prod est en jeu : proposer à l'utilisateur de basculer en /hotfix."
+[[ "$wf" == "hotfix" || "$wf" == "scan" ]] && exit 0
+why="la base de prod est réservée à /hotfix et /scan (workflow courant : ${wf:-aucun}). Hors hotfix et scan, ne PAS demander d'accès DB, de tunnel ni de gcloud auth à l'utilisateur : travailler depuis le code, les contrats, les tests et les fixtures ; une hypothèse sur les données réelles reste marquée « non vérifiée ». Lire l'intégration reste possible : malt-sql.sh --env integ. Si un vrai bug de prod est en jeu : proposer à l'utilisateur de basculer en /hotfix ; pour une étude statistique : /scan."
 
 case "$TOOL" in
   Skill)
